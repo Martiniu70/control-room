@@ -1,0 +1,58 @@
+# ---------------------------
+# 🔁 GERAL
+# ---------------------------
+*.log
+*.tmp
+*.DS_Store
+*.swp
+*.swo
+*.bak
+
+# ---------------------------
+# 🔧 VSCODE
+# ---------------------------
+.vscode/
+
+# ---------------------------
+# 🐍 PYTHON (BACKEND)
+# ---------------------------
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.db
+.venv/
+env/
+venv/
+.Python
+backend/.env
+
+# Distribuição
+dist/
+build/
+*.egg-info/
+
+# Testes
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ---------------------------
+# ⚛️ FRONTEND (REACT)
+# ---------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.vite
+
+# ---------------------------
+# 🚫 SISTEMA
+# ---------------------------
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---------------------------
+# 🚀 GIT
+# ---------------------------
+*.orig
