@@ -1,1 +1,1 @@
-"# Control Room Para Simulador de Condu‡Æo" 
+# Control Room Para Simulador de Conduï¿½ï¿½o 
