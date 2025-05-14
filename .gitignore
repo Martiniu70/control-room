@@ -35,15 +35,30 @@ build/
 .coverage
 htmlcov/
 .pytest_cache/
+.tox/
 
 # ---------------------------
 # ⚛️ FRONTEND (REACT)
-# ---------------------------
+# Node.js
 frontend/node_modules/
+frontend/build/
 frontend/dist/
 frontend/.env
-frontend/.env.local
-frontend/.vite
+frontend/.env.*   # cobre .env.local, .env.production, etc.
+frontend/.next/
+frontend/.turbo/
+frontend/.cache/
+frontend/.vite/
+frontend/.eslintcache
+
+# Coverage
+frontend/coverage/
+
+# Logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
 
 # ---------------------------
 # 🚫 SISTEMA
