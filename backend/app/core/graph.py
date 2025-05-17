@@ -3,7 +3,7 @@ import numpy as np
 
 T = TypeVar("T", bound=TypedDict)
 
-# Diferentes tipos esperado para cada ponto
+# Different types of expected data from sensors
 class SignalPoint(TypedDict):
     timestamp: float
     value: float
@@ -38,11 +38,11 @@ class Graph(Generic[T]):
         if not self._data:
             return {}
 
-        keys = [k for k in self._data[0].keys() if k != "timestamp"]
-        values = {k: [] for k in keys}
+        keys = [key for key in self._data[0].keys() if key != "timestamp"]
+        values = {key: [] for key in keys}
 
         for point in self._data:
-            for k in keys:
-                values[k].append(point[k])
+            for key in keys:
+                values[key].append(point[key])
 
-        return {k: float(np.mean(values[k])) for k in keys}
+        return {key: float(np.mean(values[key])) for key in keys}
