@@ -5,9 +5,9 @@ ecg_graph = Graph[SignalPoint]()
 eeg_graph = Graph[SignalPoint]()
 ppg_graph = Graph[SignalPoint]()
 
-ecg_gen = GraphDataGenerator(SignalPoint, {"value": (60, 100)})
-eeg_gen = GraphDataGenerator(SignalPoint, {"value": (0.3, 1.2)})
-ppg_gen = GraphDataGenerator(SignalPoint, {"value": (0.8, 1.5)})
+ecg_gen = GraphDataGenerator(SignalPoint, {"value": (60, 100)}, mode="smooth")
+eeg_gen = GraphDataGenerator(SignalPoint, {"value": (0.3, 1.2)}, mode="random")  
+ppg_gen = GraphDataGenerator(SignalPoint, {"value": (0.8, 1.5)}, mode="abrupt")
 
 def generate_all():
     ecg_graph.addValue(ecg_gen.generate())
