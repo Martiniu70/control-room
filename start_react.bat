@@ -1,5 +1,5 @@
 @echo off
 cd frontend
 echo A iniciar React (frontend)...
-npm start
+npm run dev
 pause

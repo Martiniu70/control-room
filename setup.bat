@@ -20,7 +20,7 @@ cd /d %~dp0
 
 :: 5. Instalar dependências do frontend (se node_modules não existir)
 IF NOT EXIST "frontend\node_modules" (
-    echo [4/6] Instalar dependências do frontend (React)...
+    echo [4/6] Instalar dependências do frontend (React + Vite)...
     cd frontend
     npm install --legacy-peer-deps
     cd ..
@@ -29,9 +29,17 @@ IF NOT EXIST "frontend\node_modules" (
 )
 
 :: 6. Fim
+echo.
 echo === ✅ SETUP COMPLETO! ===
 echo.
 echo Agora podes abrir dois terminais:
-echo - Backend: ativar .venv e correr `uvicorn app.main:app --reload`
-echo - Frontend: ir a `frontend/` e correr `npm start`
+echo ------------------------------------
+echo [Backend] Ativa o ambiente virtual:
+echo     CALL backend\.venv\Scripts\activate
+echo     uvicorn app.main:app --reload
+echo.
+echo [Frontend] Inicia com:
+echo     cd frontend
+echo     npm run dev
+echo ------------------------------------
 pause
