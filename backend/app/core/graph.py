@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, TypeVar, Generic, TypedDict
 import numpy as np
 
-T = TypeVar("T", bound=TypedDict)
+T = TypeVar("T", bound=TypedDict) # type: ignore
 
 # Different types of expected data from sensors
 class SignalPoint(TypedDict):

@@ -1,30 +1,42 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.routes import simulator as simulator_routes
+from app.tasks.generatorLoop import start_generator_loop
+from contextlib import asynccontextmanager
+import asyncio
 
+reactAddress = "http://localhost:3000"
 
-# Instância do FastAPI
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Data generator loop
+    asyncio.create_task(start_generator_loop())
+    yield
+
+# App creation
 app = FastAPI(
     title="Control Room Backend",
     description="API para comunicação com simulador e sensores",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-# Obter origem do react
-reactAddress = "http://localhost:3000" 
-
-# CORS: permite que o frontend aceda ao backend
+# Middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins = [reactAddress],  # Permitir pedidos desta origem
+    allow_origins=[reactAddress],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Endpoint REST para verificar se o backend está online
+# Include routers
+app.include_router(simulator_routes.router)
+
+# Status endpoint 
 @app.get("/status")
 def read_status():
-    """
-    Endpoint para verificar se o backend está online.
-    """
-    return {"status": "online", "message": "Backend da Control Room ."}
+    return {
+        "status": "online",
+        "message": "Backend da Control Room ."
+    }
