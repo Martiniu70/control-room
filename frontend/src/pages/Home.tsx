@@ -1,15 +1,10 @@
-// frontend/src/pages/Home.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from "recharts";
+import { scaleLinear } from "@visx/scale";
+import { Group } from "@visx/group";
+import { LinePath } from "@visx/shape";
+import { AxisLeft, AxisBottom } from "@visx/axis";
+import { curveMonotoneX } from "@visx/curve";
 
 interface SignalPoint {
   timestamp: number;
@@ -22,131 +17,142 @@ interface SimulatorData {
   ppg: SignalPoint | null;
 }
 
-const MAX_POINTS = 20; // número máximo de pontos a mostrar
+interface DataPoint {
+  x: number;
+  ecg?: number;
+  eeg?: number;
+  ppg?: number;
+}
 
-const Home: React.FC = () => {
-  // liga ao WS e recebe objetos { ecg, eeg, ppg }
+const width = 800;
+const height = 200;
+const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+const INITIAL_WINDOW_SIZE = 20;
+
+export default function Home() {
   const { data } = useWebSocket<SimulatorData>(
     "ws://localhost:8000/ws/simulator/latest"
   );
-
-  // estados para armazenar histórico de cada sinal
-  const [ecgData, setEcgData] = useState<SignalPoint[]>([]);
-  const [eegData, setEegData] = useState<SignalPoint[]>([]);
-  const [ppgData, setPpgData] = useState<SignalPoint[]>([]);
-
-  // sempre que chega um novo pacote de dados, atualizar cada array
+  const [series, setSeries] = useState<DataPoint[]>([]);
+  const elapsedSeconds = useRef(0);
+  const [showAllData, setShowAllData] = useState(false);
+  
   useEffect(() => {
     if (!data) return;
 
-    const append = <T extends SignalPoint>(
-      prev: T[],
-      point: T | null,
-      setter: React.Dispatch<React.SetStateAction<T[]>>
-    ) => {
-      if (!point) return;
-      const next = [...prev, point].slice(-MAX_POINTS);
-      setter(next);
+    const newPoint: DataPoint = {
+      x: elapsedSeconds.current,
+      ecg: data.ecg?.value,
+      eeg: data.eeg?.value,
+      ppg: data.ppg?.value,
     };
 
-    append(ecgData, data.ecg, setEcgData);
-    append(eegData, data.eeg, setEegData);
-    append(ppgData, data.ppg, setPpgData);
-  }, [data]);
+    elapsedSeconds.current += 1;
 
-  // função para formatar timestamp para segundos relativos
-  const formatTime = (ts: number) => {
-    return new Date(ts * 1000).toLocaleTimeString();
+    setSeries((prev) => {
+      const updated = [...prev, newPoint];
+      // Se ultrapassou o tamanho inicial da janela, ativa a exibição de todos os dados
+      if (elapsedSeconds.current > INITIAL_WINDOW_SIZE && !showAllData) {
+        setShowAllData(true);
+      }
+      return updated;
+    });
+  }, [data, showAllData]);
+
+  const getXScale = (data: DataPoint[]) => {
+    // Se estamos mostrando todos os dados ou ainda não temos dados suficientes
+    if (showAllData || elapsedSeconds.current <= INITIAL_WINDOW_SIZE) {
+      return scaleLinear({
+        domain: [0, Math.max(INITIAL_WINDOW_SIZE, elapsedSeconds.current)],
+        range: [margin.left, width - margin.right],
+      });
+    } else {
+      // Caso contrário, mostra apenas os últimos INITIAL_WINDOW_SIZE segundos
+      return scaleLinear({
+        domain: [
+          Math.max(0, elapsedSeconds.current - INITIAL_WINDOW_SIZE),
+          elapsedSeconds.current,
+        ],
+        range: [margin.left, width - margin.right],
+      });
+    }
+  };
+
+  const getYScale = (data: DataPoint[], key: keyof DataPoint) => {
+    const values = data.map((d) => d[key]).filter((v) => typeof v === "number") as number[];
+    const min = Math.min(...values, 0);
+    const max = Math.max(...values, 1);
+    return scaleLinear({
+      domain: [min, max],
+      range: [height - margin.bottom, margin.top],
+      nice: true,
+    });
+  };
+
+  const renderSignalChart = (
+    title: string,
+    color: string,
+    key: keyof DataPoint
+  ) => {
+    const xScale = getXScale(series);
+    
+    // Determinar quais dados mostrar com base na configuração
+    let visibleData = series;
+    if (!showAllData && elapsedSeconds.current > INITIAL_WINDOW_SIZE) {
+      // Se não estamos mostrando todos os dados e temos mais de INITIAL_WINDOW_SIZE
+      // pegamos apenas os últimos INITIAL_WINDOW_SIZE pontos
+      const startIndex = Math.max(0, elapsedSeconds.current - INITIAL_WINDOW_SIZE);
+      visibleData = series.filter((d) => d.x >= startIndex);
+    }
+
+    const yScale = getYScale(visibleData, key);
+
+    return (
+      <div>
+        <h2 className="text-lg font-semibold mb-2">{title}</h2>
+        <svg width={width} height={height}>
+          <Group>
+            <AxisBottom
+              scale={xScale}
+              top={height - margin.bottom}
+              tickFormat={(v) => `${v}s`}
+            />
+            <AxisLeft scale={yScale} left={margin.left} />
+            <LinePath
+              data={visibleData}
+              x={(d) => xScale(d.x)}
+              y={(d) => yScale(d[key] ?? 0)}
+              stroke={color}
+              strokeWidth={2}
+              curve={curveMonotoneX}
+            />
+          </Group>
+        </svg>
+      </div>
+    );
   };
 
   return (
     <div className="p-4 space-y-8">
-      <h1 className="text-3xl font-bold">Control Room Dashboard</h1>
-
-      {/* ECG */}
-      <div>
-        <h2 className="text-xl font-semibold mb-2">ECG (bpm)</h2>
-        <LineChart width={600} height={200} data={ecgData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
-            dataKey="timestamp"
-            tickFormatter={formatTime}
-            domain={["auto", "auto"]}
-            type="number"
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Control Room Dashboard (VisX)</h1>
+        <div className="flex items-center">
+          <input
+            type="checkbox"
+            id="showAllData"
+            checked={showAllData}
+            onChange={(e) => setShowAllData(e.target.checked)}
+            className="mr-2"
           />
-          <YAxis domain={["auto", "auto"]} />
-          <Tooltip
-            labelFormatter={(val) =>
-              `Hora: ${formatTime(val as number)}`
-            }
-          />
-          <Legend />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="#8884d8"
-            dot={false}
-          />
-        </LineChart>
+          <label htmlFor="showAllData" className="text-sm">
+            Mostrar todo o histórico
+          </label>
+        </div>
       </div>
 
-      {/* EEG */}
-      <div>
-        <h2 className="text-xl font-semibold mb-2">
-          EEG (ondas cerebrais)
-        </h2>
-        <LineChart width={600} height={200} data={eegData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
-            dataKey="timestamp"
-            tickFormatter={formatTime}
-            domain={["auto", "auto"]}
-            type="number"
-          />
-          <YAxis domain={["auto", "auto"]} />
-          <Tooltip
-            labelFormatter={(val) =>
-              `Hora: ${formatTime(val as number)}`
-            }
-          />
-          <Legend />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="#82ca9d"
-            dot={false}
-          />
-        </LineChart>
-      </div>
-
-      {/* PPG */}
-      <div>
-        <h2 className="text-xl font-semibold mb-2">PPG (pulse)</h2>
-        <LineChart width={600} height={200} data={ppgData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
-            dataKey="timestamp"
-            tickFormatter={formatTime}
-            domain={["auto", "auto"]}
-            type="number"
-          />
-          <YAxis domain={["auto", "auto"]} />
-          <Tooltip
-            labelFormatter={(val) =>
-              `Hora: ${formatTime(val as number)}`
-            }
-          />
-          <Legend />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="#ff7300"
-            dot={false}
-          />
-        </LineChart>
-      </div>
+      {renderSignalChart("ECG (bpm)", "#8884d8", "ecg")}
+      {renderSignalChart("EEG (ondas cerebrais)", "#82ca9d", "eeg")}
+      {renderSignalChart("PPG (pulse)", "#ff7300", "ppg")}
     </div>
   );
-};
-
-export default Home;
+}
