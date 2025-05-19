@@ -22,7 +22,7 @@ cd /d %~dp0
 IF NOT EXIST "frontend\node_modules" (
     echo [4/6] Instalar dependências do frontend (React)...
     cd frontend
-    npm install
+    npm install --legacy-peer-deps
     cd ..
 ) ELSE (
     echo [4/6] Dependências do frontend já instaladas.
