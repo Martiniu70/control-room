@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import simulator as simulator_routes
-from app.tasks.generatorLoop import start_generator_loop
+from app.tasks.generatorLoop import startGeneratorLoop
+from app.tasks.zeromqListener import zmqPullLoop
 from contextlib import asynccontextmanager
 import asyncio
 
@@ -10,7 +11,8 @@ reactAddress = "http://localhost:3000"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Data generator loop
-    asyncio.create_task(start_generator_loop())
+    asyncio.create_task(startGeneratorLoop())
+    asyncio.create_task(zmqPullLoop())
     yield
 
 # App creation

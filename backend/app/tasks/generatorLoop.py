@@ -1,7 +1,7 @@
 import asyncio
 from app.services import simulator
 
-async def start_generator_loop():
+async def startGeneratorLoop():
     while True:
-        simulator.generate_all()
+        simulator.generateAll()
         await asyncio.sleep(1) 
