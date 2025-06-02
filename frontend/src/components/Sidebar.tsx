@@ -1,13 +1,32 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Plus, X } from "lucide-react";
 
-export default function Sidebar({ tabs, currentTabId, onTabClick, onAddTab, onCloseTab }) {
-  const containerRef = useRef(null);
-  const logoRef = useRef(null);
-  const addButtonRef = useRef(null);
+interface Tab {
+  id: number;
+  label: string;
+}
 
-  const [tabHeight, setTabHeight] = useState(112);
-  const [tabsContainerMaxHeight, setTabsContainerMaxHeight] = useState(0);
+interface SidebarProps {
+  tabs: Tab[];
+  currentTabId: number;
+  onTabClick: (id: number) => void;
+  onAddTab: () => void;
+  onCloseTab: (id: number) => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ 
+  tabs, 
+  currentTabId, 
+  onTabClick, 
+  onAddTab, 
+  onCloseTab 
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const logoRef = useRef<HTMLDivElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+
+  const [tabHeight, setTabHeight] = useState<number>(112);
+  const [tabsContainerMaxHeight, setTabsContainerMaxHeight] = useState<number>(0);
 
   useEffect(() => {
     function calculateHeight() {
@@ -89,11 +108,13 @@ export default function Sidebar({ tabs, currentTabId, onTabClick, onAddTab, onCl
       <button
         ref={addButtonRef}
         onClick={onAddTab}
-        className="flex items-center justify-center w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-700 transition w-12 mt-4"
+        className="flex items-center justify-center w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-700 transition mt-4"
         aria-label="Add new tab"
       >
         <Plus size={16} />
       </button>
     </div>
   );
-}
+};
+
+export default Sidebar;

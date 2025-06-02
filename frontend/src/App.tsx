@@ -1,25 +1,22 @@
 import React, { useState, useEffect, useRef } from "react";
-import Sidebar from "./Sidebar";
-import MainGrid from "./MainGrid";
+import Sidebar from "./components/Sidebar";
+import MainGrid from "./components/MainGrid";
 import Header from "./Header";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { Layout } from "react-grid-layout";
 
 interface SignalPoint {
   timestamp: number;
-  value: number;
-}
-
-interface SimulatorData {
-  ecg: SignalPoint | null;
-  eeg: SignalPoint | null;
-  ppg: SignalPoint | null;
+  value: any;
+  quality: number;
+  metadata: Record<string, any>;
 }
 
 interface DataPoint {
-  x: number;
-  ecg?: number;
-  eeg?: number;
-  ppg?: number;
+  timeSeconds: number;  // Tempo real em segundos desde início
+  hr?: number;         // Heart Rate
+  ecg?: number;        // TODO
+  eeg?: number;        // TODO
 }
 
 interface CardType {
@@ -27,34 +24,60 @@ interface CardType {
   label: string;
   colSpan: number;
   rowSpan: number;
+  signalType: 'hr' | 'ecg' | 'eeg' | 'steering' | 'speed';
 }
 
+interface Tab {
+  id: number;
+  label: string;
+}
 
 function App() {
-  const { data } = useWebSocket<SimulatorData>("ws://localhost:8000/ws/simulator/latest");
-  const [series, setSeries] = useState<DataPoint[]>([]);
-  const elapsedSeconds = useRef<number>(0);
+  // WebSocket connection to backend
+  const { 
+    latestCardiacData, 
+    latestEegData, 
+    latestUnityData, 
+    connectionStatus, 
+    recentAnomalies,
+    connect,
+    disconnect
+  } = useWebSocket();
 
-  useEffect(() => {
-    if (!data) return;
-    const newPoint: DataPoint = {
-      x: elapsedSeconds.current,
-      ecg: data.ecg?.value,
-      eeg: data.eeg?.value,
-      ppg: data.ppg?.value,
-    };
-    elapsedSeconds.current += 1;
-    setSeries((prev) => [...prev, newPoint].slice(-100));
-  }, [data]);
+  // ✅ TEMPO REAL: Referência de quando começou
+  const startTimeRef = useRef<number>(Date.now());
+  
+  // ✅ DADOS SIMPLES: Array de pontos com tempo real
+  const [heartRateData, setHeartRateData] = useState<DataPoint[]>([]);
 
-  const [tabs, setTabs] = useState<{ id: number; label: string }[]>([{ id: 1, label: "Tab 1" }]);
+  // Tab management (mantido igual)
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, label: "Tab 1" }]);
   const [currentTabId, setCurrentTabId] = useState<number>(1);
   const [nextTabId, setNextTabId] = useState<number>(2);
-  const [layoutsPerTab, setLayoutsPerTab] = useState<Record<number, any[]>>({ 1: [] });
+  const [layoutsPerTab, setLayoutsPerTab] = useState<Record<number, Layout[]>>({ 1: [] });
   const [cardsPerTab, setCardsPerTab] = useState<Record<number, CardType[]>>({ 1: [] });
   const [cardIdCounter, setCardIdCounter] = useState<number>(1);
 
-  const updateLayout = (newLayout: any[]) => {
+  // ✅ PROCESSAMENTO SIMPLES: Só processar quando HR chega
+  useEffect(() => {
+    if (latestCardiacData?.hr) {
+      const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
+      
+      const newDataPoint: DataPoint = {
+        timeSeconds: currentTimeSeconds,
+        hr: latestCardiacData.hr.value
+      };
+
+      setHeartRateData(prev => [
+        ...prev,
+        newDataPoint
+      ].slice(-200)); // Manter últimos 200 pontos (cerca de 3-5 minutos)
+      
+      console.log(`HR received: ${latestCardiacData.hr.value} bpm at ${currentTimeSeconds.toFixed(1)}s`);
+    }
+  }, [latestCardiacData?.hr]);
+
+  const updateLayout = (newLayout: Layout[]) => {
     setLayoutsPerTab((prev) => ({
       ...prev,
       [currentTabId]: newLayout,
@@ -90,13 +113,16 @@ function App() {
     });
   };
 
+  // ✅ CARDS SIMPLES: Começar sempre com HR
   const addCard = () => {
     const newCard: CardType = {
       id: `${currentTabId}-${cardIdCounter}`,
-      label: `Card ${cardIdCounter}`,
+      label: `Heart Rate`,
       colSpan: 1,
       rowSpan: 1,
+      signalType: 'hr', // ✅ Sempre HR por enquanto
     };
+    
     setCardsPerTab((prev) => ({
       ...prev,
       [currentTabId]: [...(prev[currentTabId] || []), newCard],
@@ -108,7 +134,40 @@ function App() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Connection Status Bar */}
+      <div className={`px-4 py-2 text-sm text-white ${
+        connectionStatus.connected ? 'bg-green-600' : 
+        connectionStatus.reconnecting ? 'bg-yellow-600' : 'bg-red-600'
+      }`}>
+        <div className="flex justify-between items-center">
+          <span>
+            {connectionStatus.connected ? '🟢 Connected to Control Room Backend' :
+             connectionStatus.reconnecting ? '🟡 Reconnecting...' :
+             '🔴 Disconnected from Backend'}
+          </span>
+          <div className="flex gap-2">
+            {recentAnomalies.length > 0 && (
+              <span className="bg-red-500 px-2 py-1 rounded text-xs">
+                ⚠️ {recentAnomalies.length} Anomalies
+              </span>
+            )}
+            <button 
+              onClick={connectionStatus.connected ? disconnect : connect}
+              className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs transition"
+            >
+              {connectionStatus.connected ? 'Disconnect' : 'Reconnect'}
+            </button>
+          </div>
+        </div>
+        {connectionStatus.error && (
+          <div className="text-xs mt-1 opacity-90">
+            Error: {connectionStatus.error}
+          </div>
+        )}
+      </div>
+
       <Header onAddCard={addCard} />
+      
       <div className="flex flex-1">
         <Sidebar
           tabs={tabs}
@@ -122,10 +181,23 @@ function App() {
             items={currentCards}
             layout={layoutsPerTab[currentTabId] || []}
             onLayoutChange={updateLayout}
-            series={series}
+            heartRateData={heartRateData}
           />
         </main>
       </div>
+
+      {/* ✅ DEBUG PANEL SIMPLES */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-gray-800 text-white p-2 text-xs">
+          <div className="flex gap-4">
+            <span>HR Points: {heartRateData.length}</span>
+            <span>Latest HR: {heartRateData[heartRateData.length - 1]?.hr ?? 'N/A'} bpm</span>
+            <span>Time Running: {((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s</span>
+            <span>Connected: {connectionStatus.connected ? 'Yes' : 'No'}</span>
+            <span>Anomalies: {recentAnomalies.length}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
