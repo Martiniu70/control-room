@@ -124,7 +124,7 @@ async def get_system_status():
             "streaming": dataStreamer.getStatus(),
             "websocket": {
                 "endpoint": "/ws",
-                "active_connections": len(getattr(app.state, 'websocket_connections', []))
+                "active_connections": len(getattr(app.state, 'websocket_connections', [])) #TODO fix
             }
         }
         
@@ -162,8 +162,8 @@ async def get_signal_status(signal_type: str):
             content={"error": "Internal server error"}
         )
 
-# Endpoints de controlo do streaming (para desenvolvimento)
-@app.post("/api/streaming/start")
+# Endpoints de controlo do streaming
+@app.post("/api/streaming/start") #TODO Testar adicionando botão POST request no frontend
 async def start_streaming():
     """Inicia streaming de dados"""
     try:
@@ -177,9 +177,10 @@ async def start_streaming():
         )
 
 @app.post("/api/streaming/stop")
-async def stop_streaming():
+async def stop_streaming(): #TODO Testar adicionando botão POST request no frontend
     """Para streaming de dados"""
     try:
+        logger.info(f"Client is trying to stop streaming")
         await dataStreamer.stop()
         return {"status": "stopped", "timestamp": datetime.now().isoformat()}
     except Exception as e:
@@ -189,7 +190,7 @@ async def stop_streaming():
             content={"error": str(e)}
         )
 
-@app.post("/api/streaming/pause")
+@app.post("/api/streaming/pause") #TODO Testar adicionando botão POST request no frontend
 async def pause_streaming():
     """Pausa streaming de dados"""
     try:
@@ -203,7 +204,7 @@ async def pause_streaming():
         )
 
 @app.post("/api/streaming/resume")
-async def resume_streaming():
+async def resume_streaming(): #TODO Testar adicionando botão POST request no frontend
     """Retoma streaming de dados"""
     try:
         await dataStreamer.resume()
@@ -216,7 +217,7 @@ async def resume_streaming():
         )
 
 @app.get("/api/streaming/status")
-async def get_streaming_status():
+async def get_streaming_status(): 
     """Status do streaming"""
     try:
         return JSONResponse(content=dataStreamer.getStatus())
@@ -227,7 +228,7 @@ async def get_streaming_status():
             content={"error": "Internal server error"}
         )
 
-@app.post("/api/streaming/frequency/{signal_type}")
+@app.post("/api/streaming/frequency/{signal_type}") #TODO Testar adicionando parametros no frontend
 async def adjust_frequency(signal_type: str, frequency: float):
     """Ajusta frequência de um tipo de sinal"""
     try:
@@ -245,7 +246,7 @@ async def adjust_frequency(signal_type: str, frequency: float):
         )
 
 # Endpoint para injetar anomalias manualmente (desenvolvimento)
-@app.post("/api/testing/inject_anomaly")
+@app.post("/api/testing/inject_anomaly") #TODO Testar adicionando parametros no frontend
 async def inject_anomaly(signal_type: str, anomaly_type: str):
     """Injeta anomalia manualmente para teste"""
     try:
