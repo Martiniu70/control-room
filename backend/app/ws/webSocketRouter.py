@@ -5,8 +5,9 @@ Resumo:
 Define os endpoints FastAPI que os browsers usam para se conectar via WebSocket.
 Inclui o endpoint principal /ws onde clientes se conectam, fica à escuta de mensagens,
 e gere desconexões automáticas. Também inclui endpoints REST para obter estatísticas
-das conexões e status do sistema. Funciona como "rececionista" que recebe clientes
-na porta de entrada e os encaminha para o WebSocketManager.
+das conexões e status do sistema.
+# TODO Não esquecer que é api/ws (passei 2 horas a tripar com isto porque esqueci-me), 
+# TODO dado ao prefixo mas provavelemnte deivamos tirar o prefixo era da versão antiga devido à estrutura de pastas
 """
 
 from datetime import datetime
@@ -17,7 +18,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 
 from .webSocketManager import websocketManager
-#from ..services.signalManager import signalManager
+#from ..services.signalManager import signalManager 
 
 # Criar router
 router = APIRouter()
@@ -37,7 +38,7 @@ async def websocket_endpoint(websocket: WebSocket):
         clientId = await websocketManager.connect(websocket)
         logger.info(f"WebSocket connection established for {clientId}")
         
-        # Loop principal - fica à escuta de mensagens do cliente
+        # Loop principal - fica à espera de mensagens do cliente
         while True:
             try:
                 # Aguardar mensagem do cliente

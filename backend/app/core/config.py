@@ -5,8 +5,8 @@ Resumo:
 Mantem todas as configurações da nossa aplicação quer seja portas, websocket, sinais, debug etc
 Divido por classes correspondentes ZeroMQConfig, WebScoketConfig e SignalConfig
 
-Agora inclui TODOS os thresholds e configurações específicas de cada sinal,
-centralizando tudo o que antes estava espalhado pelas classes CardiacSignal e EEGSignal.
+Deve ter TODOS os thresholds e configurações específicas de cada sinal,teste, scokets etc... 
+objetivo de centralizar tudo para ser mais facil da debug / fazer alterações. 
 
 URLs disponíveis:
 
@@ -97,7 +97,7 @@ class SignalConfig:
             "raw": {
                 "channels": 4, 
                 "samplingRate": 250, 
-                "bufferSize": 7500,                 # 7500 por canal
+                "bufferSize": 7500,                 # 7500 por canal # TODO acho que depois do EEG não averiguei por canal, já nao me lembro, verificar e corrigir caso seja necassario para 7500*4
                 "channelNames": ["ch1", "ch2", "ch3", "ch4"],
                 "normalRange": (-200.0, 200.0),     # μV típico para EEG
                 "saturationThreshold": 150.0,       # μV - saturação

@@ -113,7 +113,7 @@ class EEGSignal(BaseSignal):
                 return True
                 
             except SignalValidationError:
-                # Reenvia a exceção SignalValidationError tal como foi lançada, preservando a mensagem original e de onde surgiu o erro
+                # Reenvia a exceção SignalValidationError tal como foi lançada, de modo a preservar a mensagem original e de onde surgiu o erro
                 raise
 
             except Exception as e:
@@ -157,6 +157,7 @@ class EEGSignal(BaseSignal):
                     )
                 
                 # Verificar se soma é aproximadamente 1.0 (em teoria devia ser 1 exatamente mas obviamente os equipamentos estão sujeitos a imperfeições, damos 10% de margem)
+                # TODO verificar se margem está boa ou não quando testarmos no sim
                 totalPower = sum(float(value[band]) for band in self.bandNames)
                 if not (self.minPowerBandsSum <= totalPower <= self.maxPowerBandsSum):
                     raise SignalValidationError(
@@ -177,6 +178,7 @@ class EEGSignal(BaseSignal):
                     reason=f"Erro ao validar power bands: {e}"
                 )
         
+        #TODO SE CHEGAR AQUI TAMOS COMPLETAMENTE COOKED
         # Tipo não reconhecido
         raise SignalValidationError(
             signalType="eeg",

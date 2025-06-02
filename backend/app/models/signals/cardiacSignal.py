@@ -1,5 +1,5 @@
 """
-CardiacSignal - Implementação para ECG e HR (CORRIGIDO)
+CardiacSignal - Implementação para ECG e HR 
 
 Resumo:
 Processa todos os dados cardíacos vindos do CardioWheel e do Polar Armband. 
@@ -16,7 +16,7 @@ detectArrhythmia() que procura arritmias baseado na variabilidade, e getCardiacS
 
 A classe mantém um buffer circular de 30.000 pontos (30 segundos de ECG a 1000Hz) e consegue classificar automaticamente se o batimento cardiaco (HR) está normal, 
 em bradicardia ou taquicardia.
-Foi feita com o objetivo de suportar com qualquer fonte de dados cardíacos, seja CardioWheel, Polar ou outros sensores, desde que enviem dados no formato esperado.
+Feito com o objetivo de suportar com qualquer fonte de dados cardíacos, seja CardioWheel, Polar ou outros sensores, desde que enviem dados no formato esperado.
 
 """
 

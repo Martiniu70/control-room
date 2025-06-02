@@ -149,7 +149,7 @@ class BaseSignal(ABC):
             self.anomalies = self.anomalies[-10:]
     
     def getRecentAnomalies(self, maxAge: timedelta = None) -> List[str]:
-        """Retorna anomalias recentes"""
+        """Retorna anomalias recentes""" #TODO 
         #if maxAge is None:
             #maxAge = timedelta(minutes=5)
         

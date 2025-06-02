@@ -149,8 +149,7 @@ class DataStreamer:
         if self.pausedTime:
             pauseDuration = datetime.now().timestamp() - self.pausedTime
             self.pausedTime = 0.0
-        
-        self.logger.info("DataStreamer resumed")
+            self.logger.info(f"DataStreamer resumed was pause {pauseDuration} seconds")
     
     async def _streamCardiacEcg(self):
         """Stream de dados ECG"""

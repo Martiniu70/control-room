@@ -1,5 +1,5 @@
 """
-Estruturas de dados básicas para sinais
+Estruturas de dados básicas para sinais #TODO comentar melhor, averiguar qualidade
 """
 
 from pydantic import BaseModel, Field

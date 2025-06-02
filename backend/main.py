@@ -92,7 +92,7 @@ app.add_middleware(
 )
 
 # Incluir routers WebSocket
-app.include_router(websocket_router, prefix="/api", tags=["websocket"])
+app.include_router(websocket_router, prefix="/api", tags=["websocket"]) #TODO isto devia ser mudado probably
 
 # Endpoints REST básicos
 @app.get("/")

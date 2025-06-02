@@ -1,10 +1,9 @@
 """
-SignalManager com suporte para EEG (CORRIGIDO)
+SignalManager 
 
 Resumo:
-Manager central para coordenar sinais - versão expandida com EEG e cardiac.
-Coordena todos os tipos de sinais (CardiacSignal, EEGSignal) e processa dados 
-vindos de diferentes fontes (ZeroMQ, DataStreamer). Funciona como "dirigente de orquestra"
+Coordena todos os tipos de sinais (por enquatno CardiacSignal, EEGSignal) e processa dados 
+vindos de diferentes fontes (ZeroMQ, DataStreamer). Funciona como um "manager"
 que recebe dados brutos, os distribui pelos sinais corretos, e emite eventos 
 quando processados. Inclui validação, gestão de erros, e avaliação da saúde geral do sistema.
 """
@@ -19,18 +18,18 @@ from ..models.base import SignalPoint
 from ..core import eventManager, settings
 
 class SignalManager:
-    """Manager central para coordenar sinais - versão com EEG corrigida"""
+    """Manager central para coordenar sinais"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # Sinais implementados: cardiac + EEG
+        # Sinais implementados: cardiac + EEG #TODO Adicionar os outros
         self.signals: Dict[str, Any] = {
             "cardiac": CardiacSignal(),
             "eeg": EEGSignal()
         }
         
-        # Mapeamento de data types por sinal (mais robusto)
+        # Mapeamento de data types por sinal 
         self.dataTypeMappings = {
             "cardiac": ["ecg", "hr"],
             "eeg": ["eegRaw", "eegBands"]
@@ -131,7 +130,7 @@ class SignalManager:
     
     async def processZeroMQData(self, rawData: Dict[str, Any]) -> bool:
         """
-        Processa dados vindos do ZeroMQ - versão expandida e robusta
+        Processa dados vindos do ZeroMQ
         
         Formato esperado:
         {
@@ -505,6 +504,8 @@ class SignalManager:
         """Extrai informações da mensagem de anomalia"""
         message_lower = message.lower()
         
+        # TODO código criminoso x1
+
         # Detectar tipo de anomalia
         if "bradicardia" in message_lower:
             anomaly_type = "bradycardia"
@@ -540,6 +541,9 @@ class SignalManager:
     def _classifyAnomalySeverity(self, anomalyMessage: str) -> str:
         """Classifica severidade de anomalia - melhorada"""
         message = anomalyMessage.lower()
+
+        # TODO código criminoso x2, provavelmente vamos precisar de um sistema muito melhor para avaliar isto
+        # TODO Não queria fazer um commit muito grande com esta parte ainda porque não fomos ao SIM
         
         # Crítico
         if any(word in message for word in [

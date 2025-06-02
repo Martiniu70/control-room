@@ -3,7 +3,7 @@ ZeroMQListener - Recepção de dados reais de sensores
 
 Resumo:
 Sistema de recepção de dados em tempo real dos sensores através do protocolo ZeroMQ.
-Estabelece uma conexão PULL socket que aguarda mensagens dos dispositivos médicos
+Estabelece uma conexão PULL socket que aguarda mensagens dos sensores
 (CardioWheel, Halo EEG, câmara facial, simulador Unity) e processa os dados recebidos
 através do SignalManager.
 
@@ -14,9 +14,15 @@ Funcionalidades principais:
 - Monitorização contínua da saúde da conexão com métricas detalhadas
 - Deteção de timeouts e problemas de comunicação
 - Emissão de eventos de estado para monitorização externa
-- Processamento assíncrono de mensagens com controlo de performance
+- Processamento assíncrono de mensagens com controlo da performance
 
 O listener substitui o DataStreamer quando sensores reais estão conectados.
+
+
+# TODO , primeira coisa a testar quando formos aao SIM, esta classe está sujeita a imensas mudanças se não for PUSH/PULL ....
+# TODO pelos vistos o zeroMQ pelo tambem tem PUB / SUB que é exatamente como acontece com o nosso eventManager, mas assumi
+# TODO que fosse PUSH/PULL porque fez-me sentido ser direct connect do zeroMQ para só um backend (o nosso) mas de certa forma 
+# TODO para expansão do projeto provavelemtne fizeram PUB/SUB, a correção caso necessária leva a um big revamp da classe
 """
 
 import asyncio
@@ -24,7 +30,7 @@ import json
 import logging
 import zmq
 import zmq.asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, Optional
 from enum import Enum
 
@@ -98,12 +104,12 @@ class ZeroMQListener:
             "messageTypes": {}
         }
         
-        # Cache para SignalManager (evitar import circular)
+        # Cache para SignalManager (evitar import circular) #  TODO
         self._signalManager = None
         
         self.logger.info(f"ZeroMQListener initialized - Port: {self.sensorPort}, Socket: {self.socketType}")
     
-    def _getSignalManager(self):
+    def _getSignalManager(self): # TOdo averiguar este bug estranho, isto foi só fast fix cause idk what the fuck was going on e eram 5 da manhã queria ir dormir com tudo a dar
         """Obtém referência ao SignalManager evitando import circular"""
         if self._signalManager is None:
             from .signalManager import signalManager
@@ -222,7 +228,7 @@ class ZeroMQListener:
             # Fazer bind ao porto configurado
             self.socket.bind(self.socketUrl)
             
-            # Actualizar estado e timestamps
+            # Atualizar estado e timestamps
             self.state = ListenerState.CONNECTED
             self.lastMessageTime = datetime.now()
             self.reconnectAttempts = 0
@@ -244,9 +250,7 @@ class ZeroMQListener:
     
     async def _disconnect(self):
         """
-        Fecha conexão ZeroMQ e limpa recursos de socket e contexto.
-        
-        Fecha socket graciosamente e termina contexto ZeroMQ de forma segura.
+        Fecha socket e termina contexto ZeroMQ de forma segura.
         """
         try:
             if self.socket:
@@ -296,10 +300,10 @@ class ZeroMQListener:
             # Aguardar mensagem com timeout
             message = await asyncio.wait_for(
                 self.socket.recv_string(zmq.NOBLOCK),
-                timeout=self.timeout / 1000.0
+                timeout=self.timeout / 1000.
             )
             
-            # Actualizar contador de mensagens recebidas
+            # Atualizar contador de mensagens recebidas
             self.stats["messagesReceived"] += 1
             self.lastMessageTime = datetime.now()
             
@@ -312,7 +316,7 @@ class ZeroMQListener:
             if processingTime > self.processingTimeoutWarning:
                 self.logger.warning(f"Slow message processing: {processingTime:.3f}s")
             
-            # Actualizar tempo médio de processamento
+            # Atualizar tempo médio de processamento
             if self.stats["messagesProcessed"] > 0:
                 currentAvg = self.stats["averageProcessingTime"]
                 processedCount = self.stats["messagesProcessed"]
@@ -353,7 +357,7 @@ class ZeroMQListener:
                 self.logger.warning(f"Invalid message format: {message[:100]}...")
                 return
             
-            # Actualizar timestamp da última mensagem válida
+            # Atualizar timestamp da última mensagem válida
             self.stats["lastMessageTimestamp"] = data.get("timestamp")
             
             # Contar tipos de dados recebidos para estatísticas

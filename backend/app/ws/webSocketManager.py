@@ -6,7 +6,6 @@ Gere todas as conexões WebSocket com browsers/clientes. Recebe dados processado
 através de eventos e envia-os imediatamente para todos os clientes conectados. Mantém lista
 de conexões ativas, atribui IDs únicos a cada cliente, e remove automaticamente conexões
 mortas. Também envia dados de status do sistema, anomalias detectadas, e heartbeat periódico.
-Funciona como "empregado de mesa" que leva cada "prato de dados" assim que fica pronto na cozinha.
 """
 
 import asyncio
@@ -333,8 +332,8 @@ class WebSocketManager:
     
     def _getUptime(self) -> float:
         """Calcula uptime do sistema em segundos"""
-        # Simplificado - poderia ser melhorado com tempo real de início
-        return 0.0  # Por implementar
+        #TODO 
+        return 0.0
     
     async def sendSignalStatus(self, signalType: str):
         """Envia status detalhado de um sinal específico"""
