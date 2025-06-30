@@ -1,16 +1,17 @@
+// Header.tsx (simples)
 import React from 'react';
 
 interface HeaderProps {
-  onAddCard: () => void;
+  onAddCard: (signalType?: any) => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ onAddCard }) => {
   return (
-    <header className="bg-white shadow-md p-4 flex items-center justify-between">
-      <h1 className="text-xl font-bold text-gray-700">Control Room</h1>
+    <header className="flex items-center justify-between p-4 bg-gray-800 text-white">
+      <h1 className="text-lg font-bold">Control Room</h1>
       <button
-        onClick={onAddCard}
-        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded shadow transition-colors"
+        onClick={() => onAddCard()}
+        className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded"
       >
         + Add Card
       </button>

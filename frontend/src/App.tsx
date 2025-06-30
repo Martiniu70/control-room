@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import MainGrid from "./components/MainGrid";
 import Header from "./components/Header";
+import SignalModal from "./components/SignalModal";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Layout } from "react-grid-layout";
 
@@ -40,17 +41,19 @@ function App() {
     latestUnityData, 
     connectionStatus, 
     recentAnomalies,
+    availableSignals,
     connect,
     disconnect
   } = useWebSocket();
 
-  // ✅ TEMPO REAL: Referência de quando começou
+  // Estado para mostrar/ocultar modal
+  const [modalOpen, setModalOpen] = useState(false);
+
+  // Referência para tempo inicial
   const startTimeRef = useRef<number>(Date.now());
   
-  // ✅ DADOS SIMPLES: Array de pontos com tempo real
   const [heartRateData, setHeartRateData] = useState<DataPoint[]>([]);
 
-  // Tab management (mantido igual)
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, label: "Tab 1" }]);
   const [currentTabId, setCurrentTabId] = useState<number>(1);
   const [nextTabId, setNextTabId] = useState<number>(2);
@@ -58,21 +61,14 @@ function App() {
   const [cardsPerTab, setCardsPerTab] = useState<Record<number, CardType[]>>({ 1: [] });
   const [cardIdCounter, setCardIdCounter] = useState<number>(1);
 
-  // ✅ PROCESSAMENTO SIMPLES: Só processar quando HR chega
   useEffect(() => {
     if (latestCardiacData?.hr) {
       const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
-      
       const newDataPoint: DataPoint = {
         timeSeconds: currentTimeSeconds,
         hr: latestCardiacData.hr.value
       };
-
-      setHeartRateData(prev => [
-        ...prev,
-        newDataPoint
-      ].slice(-200)); // Manter últimos 200 pontos (cerca de 3-5 minutos)
-      
+      setHeartRateData(prev => [...prev, newDataPoint].slice(-200));
       console.log(`HR received: ${latestCardiacData.hr.value} bpm at ${currentTimeSeconds.toFixed(1)}s`);
     }
   }, [latestCardiacData?.hr]);
@@ -113,14 +109,21 @@ function App() {
     });
   };
 
-  // ✅ CARDS SIMPLES: Começar sempre com HR
-  const addCard = () => {
+  const addCard = (signalType : CardType["signalType"]) => {
+    const labelMap: Record<CardType["signalType"], string> = {
+      hr: "Heart Rate",
+      ecg: "ECG",
+      eeg: "EEG",
+      steering: "Steering",
+      speed: "Speed"
+    };
+
     const newCard: CardType = {
       id: `${currentTabId}-${cardIdCounter}`,
-      label: `Heart Rate`,
+      label: labelMap[signalType] || signalType,
       colSpan: 1,
       rowSpan: 1,
-      signalType: 'hr', // ✅ Sempre HR por enquanto
+      signalType,
     };
     
     setCardsPerTab((prev) => ({
@@ -131,6 +134,23 @@ function App() {
   };
 
   const currentCards = cardsPerTab[currentTabId] || [];
+
+  // Ao clicar no botão Add Card no Header, abrir modal
+  const handleAddCardClick = () => {
+    setModalOpen(true);
+  };
+
+  // Quando o utilizador clicar num sinal dentro do modal
+  const handleSignalSelect = (signalName: string) => {
+    console.log("Selected signal:", signalName);
+
+    if(signalName === "cardiac"){
+      addCard("hr");
+    }
+
+    // Por enquanto só log
+    setModalOpen(false);  // Fecha modal
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -166,7 +186,8 @@ function App() {
         )}
       </div>
 
-      <Header onAddCard={addCard} />
+      {/* Passar a função que abre modal para o Header */}
+      <Header onAddCard={handleAddCardClick} />
       
       <div className="flex flex-1">
         <Sidebar
@@ -186,7 +207,14 @@ function App() {
         </main>
       </div>
 
-      {/* ✅ DEBUG PANEL SIMPLES */}
+      {/* Modal para seleção de sinais */}
+      <SignalModal 
+        open={modalOpen}
+        signals={availableSignals}
+        onClose={() => setModalOpen(false)}
+        onSelect={handleSignalSelect}/>
+
+      {/* DEBUG PANEL */}
       {process.env.NODE_ENV === 'development' && (
         <div className="bg-gray-800 text-white p-2 text-xs">
           <div className="flex gap-4">

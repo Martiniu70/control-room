@@ -4,12 +4,13 @@ import GridLayout, { Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
+type SignalType = "hr" | "ecg" | "eeg" | "steering" | "speed" | string;
 interface CardType {
   id: string;
   label: string;
   colSpan: number;
   rowSpan: number;
-  signalType: 'hr' | 'ecg' | 'eeg' | 'steering' | 'speed';
+  signalType: SignalType;
 }
 
 interface DataPoint {
@@ -126,7 +127,7 @@ const MainGrid: React.FC<MainGridProps> = ({
   };
 
   // Escolher cor por tipo
-  const getChartColor = (signalType: CardType['signalType']) => {
+  const getChartColor = (signalType: string) => {
     switch (signalType) {
       case 'hr': return "#e74c3c";      // Vermelho para HR
       case 'ecg': return "#27ae60";     // Verde para ECG
