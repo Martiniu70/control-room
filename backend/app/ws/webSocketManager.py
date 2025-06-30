@@ -84,7 +84,7 @@ class WebSocketManager:
                 "type": "connection.established",
                 "clientId": clientId,
                 "serverTime": datetime.now().isoformat(),
-                "availableSignals": ["cardiac", "eeg"],
+                "availableSignals": self.getActiveSignals(),
                 "updateInterval": self.updateInterval
             })
             
@@ -372,6 +372,37 @@ class WebSocketManager:
             ]
         }
     
+    def getActiveSignals(self) -> list[str]:
+        """
+        Retorna lista de sinais ativos (recebendo dados).
+        Pode consultar signalManager, zeroMQListener ou dataStreamer para estado.
+        """
+
+        active_signals = []
+
+        try:
+            from ..services import signalManager
+            active_signals = list(signalManager.signals.keys())
+
+            if settings.useRealSensors:
+                from ..services.zeroMQListener import zeroMQListener
+                if zeroMQListener.is_connected():
+                    active_signals = list(signalManager.signals.keys())
+                else:
+                    active_signals = []
+            else:
+                from .dataStreamer import dataStreamer
+                if dataStreamer.is_running():
+                    active_signals = list(signalManager.signals.keys())
+                else:
+                    active_signals = []
+
+        except Exception as e:
+            self.logger.error(f"Error getting active signals: {e}")
+
+        return active_signals
+    
+
     async def cleanup(self):
         """Limpa recursos e fecha todas as conexões"""
         self.logger.info("Cleaning up WebSocket connections...")
