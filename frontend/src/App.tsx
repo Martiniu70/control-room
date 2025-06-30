@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import MainGrid from "./components/MainGrid";
-import Header from "./Header";
+import Header from "./components/Header";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Layout } from "react-grid-layout";
 
