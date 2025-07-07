@@ -50,3 +50,53 @@ class WebSocketError(ControlRoomException):
             message=f"WebSocket error: {reason}",
             details={"reason": reason}
         )
+
+class ZeroMQProcessingError(ControlRoomException):
+    """Erro no processamento de dados ZeroMQ"""
+    
+    def __init__(self, topic: str, operation: str, reason: str, rawData: Any = None):
+        message = f"ZeroMQ processing failed for topic '{topic}' during {operation}: {reason}"
+        super().__init__(
+            message=message,
+            details={
+                "topic": topic,
+                "operation": operation,
+                "reason": reason,
+                "rawData": str(rawData)[:200] if rawData else None  # Limitar tamanho
+            }
+        )
+
+class TopicValidationError(ControlRoomException):
+    """Erro de validação específica de tópico"""
+    
+    def __init__(self, topic: str, field: str, value: Any, expectedRange: tuple = None):
+        if expectedRange:
+            message = f"Invalid {field} for topic '{topic}': {value} (expected {expectedRange})"
+        else:
+            message = f"Invalid {field} for topic '{topic}': {value}"
+        
+        super().__init__(
+            message=message,
+            details={
+                "topic": topic,
+                "field": field,
+                "value": value,
+                "expectedRange": expectedRange
+            }
+        )
+
+class UnknownTopicError(ControlRoomException):
+    """Erro para tópico não reconhecido"""
+    
+    def __init__(self, topic: str, availableTopics: list[str] = None):
+        message = f"Unknown topic: '{topic}'"
+        if availableTopics:
+            message += f". Available topics: {availableTopics}"
+        
+        super().__init__(
+            message=message,
+            details={
+                "topic": topic,
+                "availableTopics": availableTopics
+            }
+        )

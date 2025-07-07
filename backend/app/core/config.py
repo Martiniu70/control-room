@@ -22,14 +22,55 @@ from typing import Dict, List
 class ZeroMQConfig:
     """Configurações ZeroMQ"""
     def __init__(self):
-        # Configurações básicas de conexão
-        self.sensorPort = int(os.getenv('ZMQ_SENSOR_PORT', 5556))
-        self.timeout = int(os.getenv('ZMQ_TIMEOUT', 1000))                  # Tempo máximo que aguarda por uma mensagem em milissegundos
+        # Configurações básicas de conexão PUB/SUB
+        # Endereço do PC do SIM: 192.168.1.103
+        # Endereço do PC Martim: 192.168.1.79
+        self.publisherAddress = os.getenv('ZMQ_PUBLISHER_ADDRESS', '192.168.1.103')   # IP do endereço a emitir o ZEROMQ
+        self.subscriberPort = int(os.getenv('ZMQ_SUBSCRIBER_PORT', 22881))           # Port SINK_SUB_ADDR
+        self.timeout = int(os.getenv('ZMQ_TIMEOUT', 1000))                           # Timeout em milissegundos
+        # URL completo para conexão
+        self.fullSubscriberUrl = f"tcp://{self.publisherAddress}:{self.subscriberPort}"
         
+        # Tópicos para subscrever (todos os tópicos disponíveis)
+        self.topics = [
+            "Polar_PPI",           # Dados do Polar ARM Band
+            "CardioWheel_ECG",     # ECG do CardioWheel  
+            "CardioWheel_ACC",     # Acelerómetro do CardioWheel
+            "CardioWheel_GYR",     # Giroscópio do CardioWheel
+            "BrainAcess_EEG",      # EEG do BrainAccess Halo
+            "Control",             # Sinais de controlo
+            "Timestamp",           # Timestamps do sistema
+            "Cfg"                  # Configurações dos dispositivos
+        ]
+
+        # Tipos de dados reconhecidos por tópico
+        self.recognizedDataTypes = {
+            "Polar_PPI": ["hr", "ppi", "error_ms", "flags"],
+            "CardioWheel_ECG": ["ecg"],
+            "CardioWheel_ACC": ["accelerometer"],
+            "CardioWheel_GYR": ["gyroscope"],
+            "BrainAcess_EEG": ["eegRaw"],
+            "Control": ["system"],
+            "Timestamp": ["system"],
+            "Cfg": ["system"]
+        }
+
+        # Configurações de debug e logging específicas por tópico
+        self.topicLogLevels = {
+            "Polar_PPI": "INFO",        # Log normal para Polar
+            "CardioWheel_ECG": "DEBUG", # Log detalhado para ECG
+            "CardioWheel_ACC": "WARNING", # Só avisos para acelerómetro
+            "CardioWheel_GYR": "WARNING", # Só avisos para giroscópio  
+            "BrainAcess_EEG": "INFO",   # Log normal para EEG
+            "Control": "INFO",          # Log normal para controlo
+            "Timestamp": "WARNING",     # Só avisos para timestamps
+            "Cfg": "INFO"               # Log normal para configurações
+        }
+
         # Configurações de socket
-        self.lingerTime = 1000                      # Tempo para fechar socket graciosamente (ms)
+        self.lingerTime = 1000                      # Tempo para fechar socket  (ms)
         self.receiveHighWaterMark = 1000            # Limite de mensagens em buffer
-        self.socketType = "PULL"                    # Tipo de socket (PULL para receber)
+        self.socketType = "SUB"                     # Tipo de socket (SUB para receber)
         
         # Configurações de reconexão
         self.maxReconnectAttempts = 10              # Número máximo de tentativas de reconexão
@@ -41,18 +82,144 @@ class ZeroMQConfig:
         
         # Configurações de validação de mensagens
         self.maxTimestampDifference = 86400         # Segundos máximos de diferença de timestamp (24h)
-        self.recognizedDataTypes = [                # Tipos de dados reconhecidos
-            "ecg", "hr",                            # Cardiac
-            "eegRaw", "eegBands",                   # EEG
-            "landmarks", "blinkRate",               # Camera
-            "steering", "speed", "throttle", "brakes", 
-            "laneCentrality", "proximityNpcs"      # Unity
-        ]
         
         # Configurações de performance
         self.processingTimeoutWarning = 0.1         # Segundos - avisar se processamento demorar mais
         self.errorRateWarningThreshold = 0.1        # 10% - avisar se taxa de erro for superior
         self.rejectionRateWarningThreshold = 0.2    # 20% - avisar se taxa de rejeição for superior
+
+        # Mapeamento de tópicos para tipos de sinal e dados
+        self.topicToSignalMapping = {
+            "Polar_PPI": {"signalType": "cardiac", "dataType": "ppi"},
+            "CardioWheel_ECG": {"signalType": "cardiac", "dataType": "ecg"},
+            "CardioWheel_ACC": {"signalType": "sensors", "dataType": "accelerometer"},
+            "CardioWheel_GYR": {"signalType": "sensors", "dataType": "gyroscope"},
+            "BrainAcess_EEG": {"signalType": "eeg", "dataType": "eegRaw"},
+            "Control": {"signalType": "system", "dataType": "control"},
+            "Timestamp": {"signalType": "system", "dataType": "timestamp"},
+            "Cfg": {"signalType": "system", "dataType": "config"}
+        }
+
+        # Configurações de processamento específicas por tópico
+        self.topicProcessingConfig = {
+            "Polar_PPI": {
+                "ppiToHrConversion": True,
+                "ppiToHrFactor": 60000.0,           # 60000ms / PPI_ms = BPM
+                "validPpiRange": (300, 2000),       # ms (30-200 BPM)
+                "timestampUnit": "seconds"          # Unidade do timestamp
+            },
+            "CardioWheel_ECG": {
+                "samplingRate": 1000,               # Hz
+                "expectedChunkSize": 20,            # Pontos por chunk típico
+                "timestampIncrement": 0.001,        # 1ms por sample (1/1000Hz)
+                "ecgValueKey": "ECG",               # Campo com valores ECG
+                "lodValueKey": "LOD",               # Campo LOD (ignorado por enquanto)
+                "timestampUnit": "seconds"
+            },
+            "CardioWheel_ACC": {
+                "samplingRate": 100,                # Hz estimado
+                "axes": ["X", "Y", "Z"],            # Eixos do acelerómetro
+                "timestampUnit": "seconds"
+            },
+            "CardioWheel_GYR": {
+                "samplingRate": 100,                # Hz estimado  
+                "axes": ["X", "Y", "Z"],            # Eixos do giroscópio
+                "timestampUnit": "seconds"
+            },
+            "BrainAcess_EEG": {
+                "samplingRate": 250,                # Hz
+                "channels": ["ch0", "ch1", "ch2", "ch3"],  #  ch0-ch3 conforme CSVs
+                "expectedChunkSize": 10,            # Pontos por chunk típico
+                "timestampIncrement": 0.004,        # 4ms por sample (1/250Hz)
+                "timestampUnit": "seconds"
+            },
+            "Control": {
+                "expectedFrequency": 0.1,           # Mensagens ocasionais - TODO averiguar utilidade
+                "dataFormat": "msgpack"
+            },
+            "Timestamp": {
+                "expectedFrequency": 0.2,           # Timestamps ocasionais - TODO averiguar utilidade
+                "dataFormat": "msgpack"
+            },
+            "Cfg": {
+                "expectedFrequency": 0.05,          # Configurações raras - TODO averiguar utilidade
+                "dataFormat": "msgpack"
+            }
+        }
+            
+        # Configurações de validação de dados por tópico 
+        # Estrutura real: {"ts": "...", "labels": [...], "data": [[...], [...]]}
+        self.topicValidationConfig = {
+            "Polar_PPI": {
+                "requiredFields": ["ts", "labels", "data"],
+                "optionalFields": [],
+                "expectedLabels": ["error_ms", "flags", "value"],  # Sem HR - só PPI
+                "valueRanges": {
+                    "value": (300, 2000),           # PPI em ms
+                    "error_ms": (0, 1000),          # Erro em ms
+                    "flags": (0, 255)               # Flags de estado
+                }
+            },
+            "CardioWheel_ECG": {
+                "requiredFields": ["ts", "labels", "data"],
+                "optionalFields": [],
+                "expectedLabels": ["ECG", "LOD"],   # Conforme CSV
+                "valueRanges": {
+                    "ECG": (-32768, 32767),         # Valores típicos 16-bit
+                    "LOD": (0, 1)                   # Lead-off detection
+                }
+            },
+            "BrainAcess_EEG": {
+                "requiredFields": ["ts", "labels", "data"],
+                "optionalFields": [],
+                "expectedLabels": ["ch0", "ch1", "ch2", "ch3"],  # Conforme CSV
+                "valueRanges": {
+                    "ch0": (-200.0, 200.0),         # μV
+                    "ch1": (-200.0, 200.0),
+                    "ch2": (-200.0, 200.0),
+                    "ch3": (-200.0, 200.0)
+                }
+            },
+            "CardioWheel_ACC": {
+                "requiredFields": ["ts", "labels", "data"],
+                "optionalFields": [],
+                "expectedLabels": ["X", "Y", "Z"],  # Conforme CSV
+                "valueRanges": {
+                    "X": (-32768, 32767),           # Valores típicos 16-bit
+                    "Y": (-32768, 32767),
+                    "Z": (-32768, 32767)
+                }
+            },
+            "CardioWheel_GYR": {
+                "requiredFields": ["ts", "labels", "data"],
+                "optionalFields": [],
+                "expectedLabels": ["X", "Y", "Z"],  # Conforme CSV
+                "valueRanges": {
+                    "X": (-32768, 32767),           # Valores típicos 16-bit
+                    "Y": (-32768, 32767),
+                    "Z": (-32768, 32767)
+                }
+            },
+            "Control": {
+                "requiredFields": ["ts"],           # TODO averiguar campos necessários
+                "optionalFields": ["labels", "data", "*"]  # Aceitar qualquer campo por enquanto
+            },
+            "Timestamp": {
+                "requiredFields": ["ts"],           # TODO averiguar se há mais campos
+                "optionalFields": ["labels", "data", "ctrl_ts"]
+            },
+            "Cfg": {
+                "requiredFields": [],               # TODO averiguar campos necessários
+                "optionalFields": ["*"]             # Aceitar qualquer campo por enquanto
+            }
+        }
+                # Log configuração ao inicializar
+        if os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes'):
+            print(f"ZeroMQ PUB/SUB Config:")
+            print(f"  Publisher: {self.publisherAddress}:{self.subscriberPort}")
+            print(f"  Topics: {len(self.topics)} configured")
+            print(f"  Primary topics: Polar_PPI, CardioWheel_ECG, BrainAcess_EEG")
+            print(f"  Timeout: {self.timeout}ms, Message timeout: {self.messageTimeout}s")
 
 class WebSocketConfig:
     """Configurações WebSocket"""
@@ -89,6 +256,18 @@ class SignalConfig:
                 "severeTachycardiaThreshold": 150,  # bpm
                 "highVariabilityThreshold": 40,    # bpm - variabilidade extrema
                 "suddenChangeThreshold": 30        # bpm - mudança súbita
+            },
+            "ppi": {
+                # Nova configuração específica para dados PPI do Polar
+                "samplingRate": "event",
+                "bufferSize": 200,
+                "normalRange": (400, 1500),      # ms (40-150 BPM)
+                "criticalRange": (300, 2000),    # ms (30-200 BPM)
+                # Thresholds específicos para PPI
+                "lowPpiThreshold": 1000,         # ms (>60 BPM)
+                "highPpiThreshold": 600,         # ms (<100 BPM)
+                "ppiVariabilityThreshold": 200,  # ms - variação excessiva
+                "errorThreshold": 100            # ms - erro aceitável na medição
             }
         }
         
@@ -97,8 +276,8 @@ class SignalConfig:
             "raw": {
                 "channels": 4, 
                 "samplingRate": 250, 
-                "bufferSize": 7500,                 # 7500 por canal # TODO acho que depois do EEG não averiguei por canal, já nao me lembro, verificar e corrigir caso seja necassario para 7500*4
-                "channelNames": ["ch1", "ch2", "ch3", "ch4"],
+                "bufferSize": 7500,                 # 7500 por canal - TODO verificar se é por canal ou total
+                "channelNames": ["ch0", "ch1", "ch2", "ch3"],  # CORRIGIDO: ch0-ch3 conforme CSVs
                 "normalRange": (-200.0, 200.0),     # μV típico para EEG
                 "saturationThreshold": 150.0,       # μV - saturação
                 # Thresholds de anomalias EEG Raw
@@ -292,8 +471,7 @@ class SignalConfig:
             }
         }
 
-
-        #TODO  Configurações de qualidade global ajustar quando for desenvolvido
+        # TODO Configurações de qualidade global ajustar quando for desenvolvido
         self.qualityConfig = {
             "cardiac": {
                 "minQualityForAnomalies": 0.8,
@@ -325,14 +503,14 @@ class Settings:
         self.port = int(os.getenv('PORT', 8000))
 
         # Modo de operação (teste ou real)
-        self.useRealSensors = os.getenv('USE_REAL_SENSORS', 'False').lower() in ('true', '1', 'yes')
+        self.useRealSensors = os.getenv('USE_REAL_SENSORS', 'True').lower() in ('true', '1', 'yes')
         
         # CORS
         cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
         self.corsOrigins = [origin.strip() for origin in cors_origins.split(',')]
         
         # Logging
-        self.logLevel = os.getenv('LOG_LEVEL', 'INFO')
+        self.logLevel = os.getenv('LOG_LEVEL', 'DEBUG')
         self.testLogLevel = os.getenv('TEST_LOG_LEVEL', 'WARNING')
         
         # Sub-configurações
@@ -368,7 +546,7 @@ if settings.debugMode:
     print(f"Settings loaded: {settings.projectName} v{settings.version}")
     print(f"Debug mode: {settings.debugMode}")
     print(f"Log level: {settings.logLevel}")
-    print(f"ZeroMQ Sensor port: {settings.zeromq.sensorPort}")
+    print(f"ZeroMQ Sensor port: {settings.zeromq.subscriberPort}")
     print(f"WebSocket update interval: {settings.websocket.updateInterval}s")
     print(f"Cardiac thresholds: Bradycardia={settings.signals.cardiacConfig['hr']['bradycardiaThreshold']}, Tachycardia={settings.signals.cardiacConfig['hr']['tachycardiaThreshold']}")
     print(f"EEG channels: {settings.signals.eegConfig['raw']['channels']}, Range: {settings.signals.eegConfig['raw']['normalRange']}")
