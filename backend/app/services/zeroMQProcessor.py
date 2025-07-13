@@ -106,10 +106,12 @@ class ZeroMQProcessor:
                 )
 
             # Validar estrutura básica dos dados
-            await self._validateTopicData(topic, decodedData)
+            validatedData = await self._validateTopicData(topic, decodedData)
+
             
             # Processar dados específicos do tópico
-            processedData = await self._processSpecificTopic(topic, decodedData)
+            processedData = await self._processSpecificTopic(topic, validatedData)
+
             
             if processedData:
                 # Atualizar estatísticas de sucesso
@@ -253,6 +255,8 @@ class ZeroMQProcessor:
                             )
         
         self.logger.debug(f"Data validation passed for topic {topic}")
+
+        return data
     
     async def _processSpecificTopic(self, topic: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -265,7 +269,22 @@ class ZeroMQProcessor:
         Returns:
             Dados formatados para SignalManager
         """
+
+
+        # TODO FILTRO DE DEBUG TEMPORÁRIO
+        DEBUG_FILTER = "ALL"  # ← Mudar para "GYR", "ECG", "ALL", ou "NONE"
         
+        if DEBUG_FILTER == "ACC" and topic != "CardioWheel_ACC":
+            return None  # Silenciar tudo exceto ACC
+        elif DEBUG_FILTER == "GYR" and topic != "CardioWheel_GYR":
+            return None  # Silenciar tudo exceto GYR
+        elif DEBUG_FILTER == "ECG" and topic != "CardioWheel_ECG":
+            return None  # Silenciar tudo exceto ECG
+        elif DEBUG_FILTER == "NONE":
+            return None  # Silenciar tudo
+        # Se DEBUG_FILTER == "ALL", processa normalmente
+
+
         # Mapeamento de tópicos para métodos de processamento
         topicProcessors = {
             "Polar_PPI": self._processPolarPPI,
@@ -371,7 +390,7 @@ class ZeroMQProcessor:
     
     async def _processCardioWheelECG(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Processa dados de ECG do CardioWheel.
+        Processa dados de ECG do CardioWheel com conversão de 16-bit ADC para milivolts.
         
         FORMATO:
         {
@@ -410,21 +429,35 @@ class ZeroMQProcessor:
                 )
             
             # Extrair valores ECG e LOD
-            ecgValues = []
+            ecgRawValues = []
             lodValues = []
             
             for row in dataArray:
                 if len(row) > ecgIndex:
-                    ecgValues.append(row[ecgIndex])
+                    ecgRawValues.append(row[ecgIndex])
                 
                 if lodIndex is not None and len(row) > lodIndex:
                     lodValues.append(row[lodIndex])
             
-            self.logger.debug(f"Extracted {len(ecgValues)} ECG values, range: {min(ecgValues) if ecgValues else 'N/A'} to {max(ecgValues) if ecgValues else 'N/A'}")
+            self.logger.debug(f"Extracted {len(ecgRawValues)} ECG raw values, range: {min(ecgRawValues) if ecgRawValues else 'N/A'} to {max(ecgRawValues) if ecgRawValues else 'N/A'}")
+            
+            # Conversão de 16-bit ADC para milivolts
+            # TODO AVERIGUAR, por enqianto assumindo: 16-bit signed (-32768 a +32767) para range ±5mV
+            conversionFactor = 5.0 / 32768.0  # mV por ADC unit
+            baselineOffset = 1650  # Valor baseline típico observado nos dados
+            
+            ecgMillivolts = []
+            for rawValue in ecgRawValues:
+                # Remover offset baseline e converter para mV
+                adjustedValue = rawValue - baselineOffset
+                millivolts = adjustedValue * conversionFactor
+                ecgMillivolts.append(round(millivolts, 3))
+            
+            self.logger.debug(f"Converted ECG to mV: range {min(ecgMillivolts) if ecgMillivolts else 'N/A'} to {max(ecgMillivolts) if ecgMillivolts else 'N/A'}")
             
             # Gerar timestamps para cada amostra
             timestampIncrement = config["timestampIncrement"]
-            timestamps = [timestamp + (i * timestampIncrement) for i in range(len(ecgValues))]
+            timestamps = [timestamp + (i * timestampIncrement) for i in range(len(ecgMillivolts))]
             
             # Preparar dados de saída
             outputData = {
@@ -433,9 +466,12 @@ class ZeroMQProcessor:
                 "signalType": "cardiac",
                 "dataType": "ecg",
                 "data": {
-                    "ecg": ecgValues,
+                    "ecg": ecgMillivolts,
                     "timestamps": timestamps,
-                    "samplingRate": config["samplingRate"]
+                    "samplingRate": config["samplingRate"],
+                    "conversionApplied": True,
+                    "originalRange": [min(ecgRawValues), max(ecgRawValues)] if ecgRawValues else [0, 0],
+                    "convertedRange": [min(ecgMillivolts), max(ecgMillivolts)] if ecgMillivolts else [0, 0]
                 }
             }
             
@@ -452,6 +488,7 @@ class ZeroMQProcessor:
                 reason=str(e),
                 rawData=data
             )
+
     
     async def _processBrainAccessEEG(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -531,13 +568,13 @@ class ZeroMQProcessor:
     
     async def _processCardioWheelACC(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Processa dados do acelerómetro do CardioWheel.
+        Processa dados do acelerómetro do CardioWheel com conversão de 16-bit ADC para m/s².
         
         FORMATO:
         {
             "ts": "timestamp",
             "labels": ["X", "Y", "Z"],
-            "data": [[x_val, y_val, z_val], [x_val, y_val, z_val], ...]
+            "data": [[7536, 3, 3104], [7520, -6, 3107], ...]
         }
         
         Args:
@@ -548,6 +585,7 @@ class ZeroMQProcessor:
         """
         
         config = self.processingConfig["CardioWheel_ACC"]
+        sensorsConfig = settings.signals.sensorsConfig["accelerometer"]
         
         try:
             timestamp = float(data["ts"])
@@ -560,24 +598,67 @@ class ZeroMQProcessor:
             labelMap = {label: i for i, label in enumerate(labels)}
             expectedAxes = config["axes"]  # ["X", "Y", "Z"]
             
-            # Extrair dados por eixo
-            accelerometerData = {}
+            # Extrair dados por eixo e converter
+            accelerometerRaw = {}
+            accelerometerPhysical = {}
+            
+            # Fatores de conversão e offsets
+            conversionFactor = sensorsConfig["conversionFactor"]  # m/s² por ADC unit
+            baselineOffset = sensorsConfig["baselineOffset"]
             
             for axis in expectedAxes:
                 if axis in labelMap:
                     axisIndex = labelMap[axis]
-                    axisValues = []
+                    rawValues = []
+                    physicalValues = []
                     
                     # Extrair valores para este eixo de todas as amostras
                     for row in dataArray:
                         if len(row) > axisIndex:
-                            axisValues.append(row[axisIndex])
+                            rawValue = row[axisIndex]
+                            rawValues.append(rawValue)
+                            
+                            # Converter para m/s²
+                            # TODO  Super incerto.... Aplicar offset específico por eixo baseado nos dados observados
+                            if axis.upper() == 'X':
+                                adjustedValue = rawValue - 7500  # Baseline observado em X
+                            elif axis.upper() == 'Y':
+                                adjustedValue = rawValue - 0     # Y já centrado em zero
+                            elif axis.upper() == 'Z':
+                                adjustedValue = rawValue - 3100  # Z baseline (inclui gravidade)
+                            else:
+                                adjustedValue = rawValue - baselineOffset
+                            
+                            physicalValue = adjustedValue * conversionFactor
+                            physicalValues.append(round(physicalValue, 2))
                     
-                    accelerometerData[axis.lower()] = axisValues
+                    accelerometerRaw[axis.lower()] = rawValues
+                    accelerometerPhysical[axis.lower()] = physicalValues
+                    
+                    self.logger.debug(f"ACC {axis}: raw range [{min(rawValues)}, {max(rawValues)}] -> physical range [{min(physicalValues):.2f}, {max(physicalValues):.2f}] m/s²")
                 else:
                     self.logger.warning(f"Expected accelerometer axis '{axis}' not found in labels {labels}")
             
-            self.logger.debug(f"Extracted accelerometer data: {len(accelerometerData)} axes, {len(dataArray)} samples each")
+            # Calcular magnitude total para cada amostra
+            magnitudes = []
+            sampleCount = len(dataArray)
+            
+            for i in range(sampleCount):
+                try:
+                    x = accelerometerPhysical['x'][i] if 'x' in accelerometerPhysical else 0
+                    y = accelerometerPhysical['y'][i] if 'y' in accelerometerPhysical else 0
+                    z = accelerometerPhysical['z'][i] if 'z' in accelerometerPhysical else 0
+                    
+                    magnitude = (x**2 + y**2 + z**2)**0.5
+                    magnitudes.append(round(magnitude, 2))
+                except (IndexError, KeyError):
+                    magnitudes.append(0.0)
+            
+            # Gerar timestamps para cada amostra
+            timestampIncrement = 1.0 / config["samplingRate"]  # 1/100Hz = 0.01s
+            timestamps = [timestamp + (i * timestampIncrement) for i in range(sampleCount)]
+            
+            self.logger.debug(f"Extracted accelerometer data: {len(accelerometerPhysical)} axes, {sampleCount} samples each, magnitude range: [{min(magnitudes):.2f}, {max(magnitudes):.2f}] m/s²")
             
             signalMapping = self.topicSignalMapping["CardioWheel_ACC"]
             
@@ -587,8 +668,14 @@ class ZeroMQProcessor:
                 "signalType": signalMapping["signalType"],
                 "dataType": signalMapping["dataType"],
                 "data": {
-                    "accelerometer": accelerometerData,
-                    "samplingRate": config["samplingRate"]
+                    "accelerometer": accelerometerPhysical,
+                    "accelerometerRaw": accelerometerRaw,
+                    "magnitude": magnitudes,
+                    "timestamps": timestamps,
+                    "samplingRate": config["samplingRate"],
+                    "units": "m/s²",
+                    "conversionApplied": True,
+                    "conversionFactor": conversionFactor
                 }
             }
             
@@ -599,16 +686,16 @@ class ZeroMQProcessor:
                 reason=str(e),
                 rawData=data
             )
-    
+        
     async def _processCardioWheelGYR(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Processa dados do giroscópio do CardioWheel.
+        Processa dados do giroscópio do CardioWheel com conversão de 16-bit ADC para °/s.
         
         FORMATO:
         {
             "ts": "timestamp",
             "labels": ["X", "Y", "Z"],
-            "data": [[x_val, y_val, z_val], [x_val, y_val, z_val], ...]
+            "data": [[1, 0, 2], [2, -1, 0], ...]
         }
         
         Args:
@@ -619,6 +706,7 @@ class ZeroMQProcessor:
         """
         
         config = self.processingConfig["CardioWheel_GYR"]
+        sensorsConfig = settings.signals.sensorsConfig["gyroscope"]
         
         try:
             timestamp = float(data["ts"])
@@ -631,24 +719,66 @@ class ZeroMQProcessor:
             labelMap = {label: i for i, label in enumerate(labels)}
             expectedAxes = config["axes"]  # ["X", "Y", "Z"]
             
-            # Extrair dados por eixo
-            gyroscopeData = {}
+            # Extrair dados por eixo e converter
+            gyroscopeRaw = {}
+            gyroscopePhysical = {}
+            
+            # Fatores de conversão e offsets
+            conversionFactor = sensorsConfig["conversionFactor"]  # °/s por ADC unit
+            baselineOffset = sensorsConfig["baselineOffset"]
             
             for axis in expectedAxes:
                 if axis in labelMap:
                     axisIndex = labelMap[axis]
-                    axisValues = []
+                    rawValues = []
+                    physicalValues = []
                     
                     # Extrair valores para este eixo de todas as amostras
                     for row in dataArray:
                         if len(row) > axisIndex:
-                            axisValues.append(row[axisIndex])
+                            rawValue = row[axisIndex]
+                            rawValues.append(rawValue)
+                            
+                            # Converter para °/s
+                            adjustedValue = rawValue - baselineOffset
+                            physicalValue = adjustedValue * conversionFactor
+                            physicalValues.append(round(physicalValue, 1))
                     
-                    gyroscopeData[axis.lower()] = axisValues
+                    gyroscopeRaw[axis.lower()] = rawValues
+                    gyroscopePhysical[axis.lower()] = physicalValues
+                    
+                    self.logger.debug(f"GYR {axis}: raw range [{min(rawValues)}, {max(rawValues)}] -> physical range [{min(physicalValues):.1f}, {max(physicalValues):.1f}] °/s")
                 else:
                     self.logger.warning(f"Expected gyroscope axis '{axis}' not found in labels {labels}")
             
-            self.logger.debug(f"Extracted gyroscope data: {len(gyroscopeData)} axes, {len(dataArray)} samples each")
+            # Calcular magnitude angular total para cada amostra
+            angularMagnitudes = []
+            sampleCount = len(dataArray)
+            
+            for i in range(sampleCount):
+                try:
+                    x = gyroscopePhysical['x'][i] if 'x' in gyroscopePhysical else 0
+                    y = gyroscopePhysical['y'][i] if 'y' in gyroscopePhysical else 0
+                    z = gyroscopePhysical['z'][i] if 'z' in gyroscopePhysical else 0
+                    
+                    magnitude = (x**2 + y**2 + z**2)**0.5
+                    angularMagnitudes.append(round(magnitude, 1))
+                except (IndexError, KeyError):
+                    angularMagnitudes.append(0.0)
+            
+            # Gerar timestamps para cada amostra
+            timestampIncrement = 1.0 / config["samplingRate"]  # 1/100Hz = 0.01s
+            timestamps = [timestamp + (i * timestampIncrement) for i in range(sampleCount)]
+            
+            # Calcular estatísticas básicas para detecção de padrões
+            if gyroscopePhysical:
+                maxRotationRate = max(max(abs(min(values)), abs(max(values))) for values in gyroscopePhysical.values())
+                averageMagnitude = sum(angularMagnitudes) / len(angularMagnitudes) if angularMagnitudes else 0
+            else:
+                maxRotationRate = 0
+                averageMagnitude = 0
+            
+            self.logger.debug(f"Extracted gyroscope data: {len(gyroscopePhysical)} axes, {sampleCount} samples each, angular magnitude range: [{min(angularMagnitudes):.1f}, {max(angularMagnitudes):.1f}] °/s")
             
             signalMapping = self.topicSignalMapping["CardioWheel_GYR"]
             
@@ -658,8 +788,16 @@ class ZeroMQProcessor:
                 "signalType": signalMapping["signalType"],
                 "dataType": signalMapping["dataType"],
                 "data": {
-                    "gyroscope": gyroscopeData,
-                    "samplingRate": config["samplingRate"]
+                    "gyroscope": gyroscopePhysical,
+                    "gyroscopeRaw": gyroscopeRaw,
+                    "angularMagnitude": angularMagnitudes,
+                    "timestamps": timestamps,
+                    "samplingRate": config["samplingRate"],
+                    "units": "°/s",
+                    "conversionApplied": True,
+                    "conversionFactor": conversionFactor,
+                    "maxRotationRate": maxRotationRate,
+                    "averageMagnitude": averageMagnitude
                 }
             }
             
@@ -670,7 +808,7 @@ class ZeroMQProcessor:
                 reason=str(e),
                 rawData=data
             )
-    
+        
     async def _processSystemControl(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Processa mensagens de controlo do sistema.

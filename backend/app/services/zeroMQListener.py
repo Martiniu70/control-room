@@ -348,6 +348,13 @@ class ZeroMQListener:
                 return
             
             topic = multipart_msg[0].decode('utf-8')
+            #TODO   FILTRO DE DEBUG
+            # TOPICS_TO_SHOW = ["CardioWheel_ACC"]  # ← Só mostrar ACC
+            #TOPICS_TO_SHOW = ["CardioWheel_GYR"]  # ← Só mostrar GYR
+            # TOPICS_TO_SHOW = ["CardioWheel_ACC", "CardioWheel_GYR"]  # ← Ambos
+            
+            #if topic not in TOPICS_TO_SHOW:
+                #return  # Skip este tópico
             raw_data = multipart_msg[1]  # Manter como bytes para o processor
             
             self.logger.debug(f"Received message from topic: {topic}, size: {len(raw_data)} bytes")

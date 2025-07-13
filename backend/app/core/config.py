@@ -59,7 +59,7 @@ class ZeroMQConfig:
         self.topicLogLevels = {
             "Polar_PPI": "INFO",        # Log normal para Polar
             "CardioWheel_ECG": "DEBUG", # Log detalhado para ECG
-            "CardioWheel_ACC": "WARNING", # Só avisos para acelerómetro
+            "CardioWheel_ACC": "INFO", # Só avisos para acelerómetro
             "CardioWheel_GYR": "WARNING", # Só avisos para giroscópio  
             "BrainAcess_EEG": "INFO",   # Log normal para EEG
             "Control": "INFO",          # Log normal para controlo
@@ -317,6 +317,60 @@ class SignalConfig:
                 }
             }
         }
+
+        # Configurações de sensores COMPLETAS
+        self.sensorsConfig = {
+            "accelerometer": {
+                "samplingRate": 100,                    # Hz conforme CardioWheel
+                "bufferSize": 3000,                     # 30s * 100Hz
+                "normalRange": (-32768, 32767),         # Valores 16-bit ADC
+                "physicalRange": (-156.8, 156.8),      # ±16g em m/s² após conversão
+                "axes": ["x", "y", "z"],                # Eixos do acelerómetro
+                "conversionFactor": 0.0048,             # ADC para m/s² (aprox 16g/32768)
+                "baselineOffset": 0,                    # Offset para calibração
+                # Thresholds de anomalias ACC
+                "suddenMovementThreshold": 50.0,        # m/s² - movimento brusco
+                "highVibrationsThreshold": 20.0,        # m/s² std - vibrações excessivas
+                "magnitudeThreshold": 100.0,            # m/s² - magnitude total excessiva
+                "lowActivityThreshold": 1.0,            # m/s² - sinal muito plano
+                "impactThreshold": 120.0,               # m/s² - possível impacto
+                "sustainedAccelThreshold": 80.0         # m/s² - aceleração sustentada
+            },
+            "gyroscope": {
+                "samplingRate": 100,                    # Hz conforme CardioWheel
+                "bufferSize": 3000,                     # 30s * 100Hz  
+                "normalRange": (-32768, 32767),         # Valores 16-bit ADC
+                "physicalRange": (-2000.0, 2000.0),    # ±2000°/s após conversão
+                "axes": ["x", "y", "z"],                # Eixos do giroscópio
+                "conversionFactor": 0.061,              # ADC para °/s (aprox 2000°/s / 32768)
+                "baselineOffset": 0,                    # Offset para calibração
+                # Thresholds de anomalias GYR
+                "rapidRotationThreshold": 500.0,        # °/s - rotação rápida
+                "instabilityThreshold": 100.0,          # °/s std - instabilidade
+                "angularMagnitudeThreshold": 800.0,     # °/s - magnitude angular excessiva
+                "lowActivityThreshold": 2.0,            # °/s - sinal muito plano
+                "spinThreshold": 1000.0,                # °/s - possível spin/derrapagem
+                "sustainedRotationThreshold": 300.0     # °/s - rotação sustentada
+            },
+            "combined": {
+                # Análises combinadas ACC+GYR
+                "aggressiveDrivingCombo": {
+                    "accThreshold": 30.0,               # m/s² simultâneo
+                    "gyrThreshold": 200.0,              # °/s simultâneo
+                    "durationThreshold": 2.0            # segundos mínimos
+                },
+                "emergencyBrakingCombo": {
+                    "accThreshold": -60.0,              # m/s² negativo (desaceleração)
+                    "gyrStabilityMax": 50.0,            # °/s máximo (sem rotação)
+                    "durationMin": 1.0                  # segundos mínimos
+                },
+                "cornering": {
+                    "accLateralMin": 15.0,              # m/s² lateral mínimo
+                    "gyrYawMin": 100.0,                 # °/s yaw mínimo
+                    "combinedMagnitudeMin": 50.0        # magnitude combinada
+                }
+            }
+        }
         
         # TODO Configurações câmera
         self.cameraConfig = {
@@ -468,6 +522,58 @@ class SignalConfig:
                         "frequencies": [10, 18, 3]   # Hz correspondentes
                     }
                 }
+            },
+
+            "sensors": {
+                # Configurações gerais
+                "anomalyChance": 0.04,              # 4% chance de anomalia natural
+                "combinedAnomalyChance": 0.02,      # 2% chance de anomalia combinada
+                
+                # Parâmetros base de geração
+                "accBaselineNoise": 5.0,            # Ruído baseline ACC em ADC units
+                "gyrBaselineNoise": 2.0,            # Ruído baseline GYR em ADC units
+                "accGravityOffset": {               # Offset gravitacional por eixo
+                    "x": 0, "y": 0, "z": 8192      # Z = ~1g em ADC (aprox 32768/4)
+                },
+                "gyrZeroOffset": {                  # Offset zero por eixo
+                    "x": 0, "y": 0, "z": 0
+                },
+                
+                # Padrões de movimento normal
+                "normalDriving": {
+                    "accVariationStd": 10.0,        # ADC units - variação normal
+                    "gyrVariationStd": 5.0,         # ADC units - variação normal
+                    "corneringFrequency": 0.1,      # Hz - frequência de curvas
+                    "brakingFrequency": 0.05        # Hz - frequência de travagens
+                },
+                
+                # Valores para anomalias específicas
+                "anomalyPatterns": {
+                    "suddenBraking": {
+                        "accMagnitude": -15000,     # ADC units (forte desaceleração)
+                        "duration": 2.0,            # segundos
+                        "gyrStability": 100         # ADC units (pouca rotação)
+                    },
+                    "aggressiveCorner": {
+                        "accLateral": 8000,         # ADC units
+                        "gyrYaw": 5000,             # ADC units
+                        "duration": 3.0             # segundos
+                    },
+                    "vibrations": {
+                        "accAmplitude": 2000,       # ADC units
+                        "frequency": 15.0,          # Hz
+                        "duration": 5.0             # segundos
+                    },
+                    "spin": {
+                        "gyrMagnitude": 20000,      # ADC units
+                        "accChaotic": 5000,         # ADC units (movimento caótico)
+                        "duration": 4.0             # segundos
+                    }
+                },
+                
+                # Configurações de precisão
+                "decimalPlaces": 1,                 # casas decimais para valores físicos
+                "defaultSampleCount": 100           # número padrão de amostras por chunk
             }
         }
 

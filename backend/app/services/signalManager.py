@@ -2,7 +2,7 @@
 SignalManager 
 
 Resumo:
-Coordena todos os tipos de sinais (por enquatno CardiacSignal, EEGSignal) e processa dados 
+Coordena todos os tipos de sinais (CardiacSignal, EEGSignal, SensorsSignal) e processa dados 
 vindos de diferentes fontes (ZeroMQ, DataStreamer). Funciona como um "manager"
 que recebe dados brutos, os distribui pelos sinais corretos, e emite eventos 
 quando processados. Inclui validação, gestão de erros, e avaliação da saúde geral do sistema.
@@ -14,6 +14,7 @@ from datetime import datetime
 
 from ..models.signals.cardiacSignal import CardiacSignal
 from ..models.signals.eegSignal import EEGSignal
+from ..models.signals.sensorSignal import SensorsSignal
 from ..models.base import SignalPoint
 from ..core import eventManager, settings
 
@@ -23,22 +24,25 @@ class SignalManager:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # Sinais implementados: cardiac + EEG #TODO Adicionar os outros
+        # Sinais implementados: cardiac + EEG + sensors
         self.signals: Dict[str, Any] = {
             "cardiac": CardiacSignal(),
-            "eeg": EEGSignal()
+            "eeg": EEGSignal(),
+            "sensors": SensorsSignal()
         }
         
         # Mapeamento de data types por sinal 
         self.dataTypeMappings = {
             "cardiac": ["ecg", "hr"],
-            "eeg": ["eegRaw", "eegBands"]
+            "eeg": ["eegRaw", "eegBands"],
+            "sensors": ["accelerometer", "gyroscope"]
         }
         
         # Mapeamento de métodos específicos de status por sinal
         self.statusMethods = {
             "cardiac": "getCardiacStatus",
-            "eeg": "getEegStatus"
+            "eeg": "getEegStatus",
+            "sensors": "getSensorsStatus"
         }
         
         # Estatísticas do manager
@@ -58,8 +62,8 @@ class SignalManager:
         Adiciona dados a um sinal específico
         
         Args:
-            signalType: "cardiac", "eeg"
-            dataType: "ecg", "hr", "eegRaw", "eegBands"
+            signalType: "cardiac", "eeg", "sensors"
+            dataType: "ecg", "hr", "eegRaw", "eegBands", "accelerometer", "gyroscope"
             value: Valor do sinal
             timestamp: Timestamp opcional
         """
@@ -149,6 +153,14 @@ class SignalManager:
                 "eegBands": {
                     "delta": 0.25, "theta": 0.33, "alpha": 0.42, 
                     "beta": 0.18, "gamma": 0.05
+                },
+                
+                # Sensors
+                "accelerometer": {
+                    "x": [val1, val2, ...], "y": [...], "z": [...]
+                },
+                "gyroscope": {
+                    "x": [val1, val2, ...], "y": [...], "z": [...]
                 }
             }
         }
@@ -196,6 +208,17 @@ class SignalManager:
                         processedCount += 1
                 except Exception as e:
                     errors.append(f"EEG processing failed: {e}")
+                    overallSuccess = False
+            
+            # Processar dados de sensores
+            if "accelerometer" in data or "gyroscope" in data:
+                try:
+                    sensorsSuccess = await self._processSensorsData(data, timestamp)
+                    overallSuccess = overallSuccess and sensorsSuccess
+                    if sensorsSuccess:
+                        processedCount += 1
+                except Exception as e:
+                    errors.append(f"Sensors processing failed: {e}")
                     overallSuccess = False
             
             # Verificar se processamos alguma coisa
@@ -292,6 +315,44 @@ class SignalManager:
                     self.logger.warning(f"Failed to process EEG bands data")
             except Exception as e:
                 self.logger.error(f"Error processing EEG bands data: {e}")
+                success = False
+        
+        return success
+    
+    async def _processSensorsData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
+        """Processa dados de sensores específicos com validação"""
+        success = True
+        
+        # Processar Accelerometer se presente
+        if "accelerometer" in data:
+            try:
+                accSuccess = await self.addSignalData(
+                    signalType="sensors",
+                    dataType="accelerometer",
+                    value={"accelerometer": data["accelerometer"]},  # Wrap no formato esperado
+                    timestamp=timestamp
+                )
+                success = success and accSuccess
+                if not accSuccess:
+                    self.logger.warning(f"Failed to process accelerometer data")
+            except Exception as e:
+                self.logger.error(f"Error processing accelerometer data: {e}")
+                success = False
+        
+        # Processar Gyroscope se presente
+        if "gyroscope" in data:
+            try:
+                gyrSuccess = await self.addSignalData(
+                    signalType="sensors",
+                    dataType="gyroscope",
+                    value={"gyroscope": data["gyroscope"]},  # Wrap no formato esperado
+                    timestamp=timestamp
+                )
+                success = success and gyrSuccess
+                if not gyrSuccess:
+                    self.logger.warning(f"Failed to process gyroscope data")
+            except Exception as e:
+                self.logger.error(f"Error processing gyroscope data: {e}")
                 success = False
         
         return success
@@ -504,9 +565,7 @@ class SignalManager:
         """Extrai informações da mensagem de anomalia"""
         message_lower = message.lower()
         
-        # TODO código criminoso x1
-
-        # Detectar tipo de anomalia
+        # Detectar tipo de anomalia cardiac
         if "bradicardia" in message_lower:
             anomaly_type = "bradycardia"
             threshold = settings.signals.cardiacConfig["hr"]["bradycardiaThreshold"]
@@ -516,15 +575,44 @@ class SignalManager:
         elif "eletrodo" in message_lower and "solto" in message_lower:
             anomaly_type = "electrode_loose"
             threshold = None
+        elif "amplitude" in message_lower and "baixa" in message_lower:
+            anomaly_type = "low_amplitude"
+            threshold = settings.signals.cardiacConfig["ecg"]["lowAmplitudeThreshold"]
+        
+        # Detectar tipo de anomalia EEG
         elif "saturação" in message_lower:
             anomaly_type = "saturation"
             threshold = settings.signals.eegConfig["raw"]["saturationThreshold"]
         elif "dominância" in message_lower and "delta" in message_lower:
             anomaly_type = "delta_dominance"
             threshold = settings.signals.eegConfig["bands"]["deltaExcessThreshold"]
-        elif "amplitude" in message_lower and "baixa" in message_lower:
-            anomaly_type = "low_amplitude"
-            threshold = settings.signals.cardiacConfig["ecg"]["lowAmplitudeThreshold"]
+        
+        # Detectar tipo de anomalia sensors
+        elif "movimento" in message_lower and "brusco" in message_lower:
+            anomaly_type = "sudden_movement"
+            threshold = settings.signals.sensorsConfig["accelerometer"]["suddenMovementThreshold"]
+        elif "impacto" in message_lower:
+            anomaly_type = "impact"
+            threshold = settings.signals.sensorsConfig["accelerometer"]["impactThreshold"]
+        elif "vibração" in message_lower and "excessiva" in message_lower:
+            anomaly_type = "excessive_vibration"
+            threshold = settings.signals.sensorsConfig["accelerometer"]["highVibrationsThreshold"]
+        elif "rotação" in message_lower and "rápida" in message_lower:
+            anomaly_type = "rapid_rotation"
+            threshold = settings.signals.sensorsConfig["gyroscope"]["rapidRotationThreshold"]
+        elif "spin" in message_lower or "derrapagem" in message_lower:
+            anomaly_type = "spin_slip"
+            threshold = settings.signals.sensorsConfig["gyroscope"]["spinThreshold"]
+        elif "condução" in message_lower and "agressiva" in message_lower:
+            anomaly_type = "aggressive_driving"
+            threshold = None
+        elif "travagem" in message_lower and "emergência" in message_lower:
+            anomaly_type = "emergency_braking"
+            threshold = None
+        elif "instabilidade" in message_lower:
+            anomaly_type = "instability"
+            threshold = settings.signals.sensorsConfig["gyroscope"]["instabilityThreshold"]
+        
         else:
             anomaly_type = "unknown"
             threshold = None
@@ -541,21 +629,20 @@ class SignalManager:
     def _classifyAnomalySeverity(self, anomalyMessage: str) -> str:
         """Classifica severidade de anomalia - melhorada"""
         message = anomalyMessage.lower()
-
-        # TODO código criminoso x2, provavelmente vamos precisar de um sistema muito melhor para avaliar isto
-        # TODO Não queria fazer um commit muito grande com esta parte ainda porque não fomos ao SIM
         
         # Crítico
         if any(word in message for word in [
             "severe", "crítico", "saturação", "solto", "muito baixa", "muito alta",
-            "error", "failed", "connection", "timeout"
+            "error", "failed", "connection", "timeout", "impacto", "spin", "derrapagem",
+            "emergência", "travagem"
         ]):
             return "critical"
         
         # Aviso
         elif any(word in message for word in [
             "moderate", "alta", "súbita", "dominância", "excessiva", "warning",
-            "drift", "artefacto", "movimento", "variabilidade"
+            "drift", "artefacto", "movimento", "variabilidade", "brusco", "rápida",
+            "agressiva", "vibração", "rotação", "instabilidade"
         ]):
             return "warning"
         
@@ -565,7 +652,7 @@ class SignalManager:
     
     def getManagerStats(self) -> Dict[str, Any]:
         """Estatísticas do SignalManager"""
-        uptime = (datetime.now() - self.stats["startTime"]).total_seconds()
+        uptime = (datetime.now() - datetime.fromisoformat(self.stats["startTime"])).total_seconds()
         
         return {
             **self.stats,
@@ -588,7 +675,7 @@ class SignalManager:
                 "dataProcessedBySignal": {signal: 0 for signal in self.signals.keys()},
                 "totalErrors": 0,
                 "lastProcessedTime": None,
-                "startTime": datetime.now()
+                "startTime": datetime.now().isoformat()
             }
             
             self.logger.info("All signals and statistics reset")
