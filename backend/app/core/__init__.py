@@ -8,7 +8,8 @@ from .exceptions import (
     ControlRoomException,
     SignalValidationError,
     ZeroMQError,
-    WebSocketError
+    WebSocketError,
+    TopicValidationError
 )
 
 __all__ = [
@@ -17,7 +18,8 @@ __all__ = [
     "ControlRoomException",
     "SignalValidationError",
     "ZeroMQError",
-    "WebSocketError"
+    "WebSocketError",
+    "TopicValidationError"
 ]
 
 import logging

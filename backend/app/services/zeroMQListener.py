@@ -27,7 +27,7 @@ import logging
 import zmq
 import zmq.asyncio
 from datetime import datetime
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, List, Optional, Set
 from enum import Enum
 
 from ..core import settings, eventManager
@@ -43,6 +43,12 @@ class ListenerState(Enum):
     RECONNECTING = "reconnecting"
     ERROR = "error"
 
+class WhoToListenState(Enum):
+    """Estados possíveis que o listener pode tomar para decidir que portas deve 'ouvir'"""
+    MOCK = "mock"
+    REAL = "real"
+    CUSTOM = "custom"
+
 class ZeroMQListener:
     """Listener para recepção de dados reais de sensores via ZeroMQ PUB/SUB"""
     
@@ -50,33 +56,36 @@ class ZeroMQListener:
         self.logger = logging.getLogger(__name__)
         
         # Carregar configurações ZeroMQ centralizadas
-        zmqConfig = settings.zeromq
+        self.zmqConfig = settings.zeromq
+        self.mockConfig = settings.mockZeromq
         
-        # Configurações de conexão PUB/SUB
-        self.publisherAddress = zmqConfig.publisherAddress  # Endereço do publisher
-        self.subscriberPort = zmqConfig.subscriberPort      # Porto local para subscriber
-        self.timeout = zmqConfig.timeout
-        self.subscriberUrl = f"tcp://{self.publisherAddress}:{self.subscriberPort}"
+        # Estado atual do modo
+        self.currentMode = WhoToListenState.REAL if settings.useRealSensors else WhoToListenState.MOCK
+        
+        # Configurar endereços iniciais
+        self._updateConnectionConfig()
+
+        self.timeout = self.zmqConfig.timeout
         
         # Tópicos para subscrever (configurados centralmente)
-        self.topics = zmqConfig.topics.copy()  # Lista de tópicos configurados
+        self.topics = self.zmqConfig.topics.copy()  # Lista de tópicos configurados
         self.subscribedTopics: Set[str] = set()
         
         # Configurações de socket
-        self.lingerTime = zmqConfig.lingerTime
-        self.receiveHighWaterMark = zmqConfig.receiveHighWaterMark
+        self.lingerTime = self.zmqConfig.lingerTime
+        self.receiveHighWaterMark = self.zmqConfig.receiveHighWaterMark
         self.socketType = "SUB"  # Sempre SUB para este listener
         
         # Configurações de reconexão e timeouts
-        self.maxReconnectAttempts = zmqConfig.maxReconnectAttempts
-        self.reconnectDelay = zmqConfig.reconnectDelay
-        self.messageTimeout = zmqConfig.messageTimeout
-        self.heartbeatInterval = zmqConfig.heartbeatInterval
+        self.maxReconnectAttempts = self.zmqConfig.maxReconnectAttempts
+        self.reconnectDelay = self.zmqConfig.reconnectDelay
+        self.messageTimeout = self.zmqConfig.messageTimeout
+        self.heartbeatInterval = self.zmqConfig.heartbeatInterval
         
         # Configurações de performance
-        self.processingTimeoutWarning = zmqConfig.processingTimeoutWarning
-        self.errorRateWarningThreshold = zmqConfig.errorRateWarningThreshold
-        self.rejectionRateWarningThreshold = zmqConfig.rejectionRateWarningThreshold
+        self.processingTimeoutWarning = self.zmqConfig.processingTimeoutWarning
+        self.errorRateWarningThreshold = self.zmqConfig.errorRateWarningThreshold
+        self.rejectionRateWarningThreshold = self.zmqConfig.rejectionRateWarningThreshold
         
         # Estado da conexão
         self.state = ListenerState.STOPPED
@@ -112,6 +121,22 @@ class ZeroMQListener:
         
         self.logger.info(f"ZeroMQListener initialized - Publisher: {self.subscriberUrl}, Topics: {self.topics}")
     
+    def _updateConnectionConfig(self):
+        """Atualiza configuração de conexão baseada no modo atual"""
+        if self.currentMode == WhoToListenState.REAL:
+            self.publisherAddress = self.zmqConfig.publisherAddress  # 192.168.1.103
+            self.subscriberPort = self.zmqConfig.subscriberPort      # 22881
+            self.subscriberUrl = f"tcp://{self.publisherAddress}:{self.subscriberPort}"
+            self.logger.info(f"ZeroMQListner CONFIG: Real mode - {self.subscriberUrl}")
+        elif self.currentMode == WhoToListenState.MOCK: 
+            self.publisherAddress = self.mockConfig.mockPublisherAddress  # 127.0.0.1
+            self.subscriberPort = self.mockConfig.mockPublisherPort       # 22882
+            self.subscriberUrl = self.mockConfig.mockPublisherUrl         # tcp://127.0.0.1:22882
+            self.logger.info(f"ZeroMQListener CONFIG: Mock mode - {self.subscriberUrl}")
+        else:
+            # Não é suposto a não ser que haja algo novo.
+            self.logger.info(f"ZeroMQListener CONFIG: mode desconhecido config mal feita. - {self.subscriberUrl}")
+
     async def start(self):
         """
         Inicia o listener ZeroMQ e estabelece conexão com publisher.
@@ -336,28 +361,28 @@ class ZeroMQListener:
         """
         try:
             # Aguardar mensagem multipart com timeout
-            multipart_msg = await asyncio.wait_for(
+            multiPartMsg = await asyncio.wait_for(
                 self.socket.recv_multipart(zmq.NOBLOCK),
                 timeout=self.timeout / 1000.0
             )
             
             # Extrair tópico e dados
-            if len(multipart_msg) < 2:
+            if len(multiPartMsg) < 2:
                 self.logger.warning("Received malformed multipart message")
                 self.stats["messagesRejected"] += 1
                 return
             
-            topic = multipart_msg[0].decode('utf-8')
+            topic = multiPartMsg[0].decode('utf-8')
             #TODO   FILTRO DE DEBUG
-            # TOPICS_TO_SHOW = ["CardioWheel_ACC"]  # ← Só mostrar ACC
-            #TOPICS_TO_SHOW = ["CardioWheel_GYR"]  # ← Só mostrar GYR
-            # TOPICS_TO_SHOW = ["CardioWheel_ACC", "CardioWheel_GYR"]  # ← Ambos
+            # TOPICS_TO_SHOW = ["CardioWheel_ACC"]  # Só mostrar ACC
+            #TOPICS_TO_SHOW = ["CardioWheel_GYR"]  # Só mostrar GYR
+            # TOPICS_TO_SHOW = ["CardioWheel_ACC", "CardioWheel_GYR"]  # Ambos
             
             #if topic not in TOPICS_TO_SHOW:
                 #return  # Skip este tópico
-            raw_data = multipart_msg[1]  # Manter como bytes para o processor
+            rawData = multiPartMsg[1]  # Manter como bytes para o processor
             
-            self.logger.debug(f"Received message from topic: {topic}, size: {len(raw_data)} bytes")
+            self.logger.debug(f"Received message from topic: {topic}, size: {len(rawData)} bytes")
             
             # Atualizar contadores de recepção
             self.stats["messagesReceived"] += 1
@@ -369,7 +394,7 @@ class ZeroMQListener:
             
             # Processar mensagem com medição de tempo
             startTime = datetime.now()
-            await self._processMessage(topic, raw_data)
+            await self._processMessage(topic, rawData)
             processingTime = (datetime.now() - startTime).total_seconds()
             
             # Verificar se processamento demorou mais que o esperado
@@ -459,6 +484,86 @@ class ZeroMQListener:
                 self.stats["topicStats"][topic]["rejected"] += 1
             self.stats["errors"] += 1
             self.logger.error(f"Error processing message from topic {topic}: {e}")
+
+    async def switchMode(self, newMode: str):
+        """
+        Muda dinamicamente entre modos real/mock
+        
+        Args:
+            newMode: "real" ou "mock"
+        """
+        # Validar string e converter para enum
+        try:
+            if newMode.lower() == "real":
+                newModeEnum = WhoToListenState.REAL
+            elif newMode.lower() == "mock":
+                newModeEnum = WhoToListenState.MOCK
+            else:
+                raise ValueError(f"Invalid mode: '{newMode}'. Must be 'real' or 'mock'")
+        except AttributeError:
+            raise ValueError(f"Mode must be a string, got {type(newMode)}")
+        
+        # Comparar enums
+        if newModeEnum == self.currentMode:
+            self.logger.info(f"Already in {newMode} mode")
+            return
+        
+        oldMode = self.currentMode.value  
+        self.logger.info(f"Switching from {oldMode} to {newMode} mode...")
+        
+        # Para conexão atual
+        if self.state == ListenerState.CONNECTED:
+            await self.stop()
+        
+        # Atualizar
+        self.currentMode = newModeEnum
+        self._updateConnectionConfig()
+        
+        # Reiniciar com nova configuração
+        await self.start()
+        
+        self.logger.info(f"Successfully switched to {newMode} mode")
+        
+        # Emitir evento de mudança
+        await eventManager.emit("zmq.mode_switched", {
+            "timestamp": datetime.now().isoformat(),
+            "oldMode": oldMode,
+            "newMode": newMode,
+            "newUrl": self.subscriberUrl
+        })
+    
+    def getCurrentMode(self) -> str:
+        """Retorna modo atual"""
+        return self.currentMode.value
+    
+    def getAvailableModes(self) -> List[str]:
+        """Retorna modos disponíveis"""
+        return [mode.value for mode in WhoToListenState]
+    
+    async def setCustomAddress(self, address: str, port: int):
+        """
+        Define endereço customizado temporariamente
+        
+        Args:
+            address: IP address (ex: "192.168.1.100")
+            port: Port number (ex: 22883)
+        """
+        self.logger.info(f"Setting custom address: {address}:{port}")
+        
+        # Para conexão atual se ativa
+        if self.state == ListenerState.CONNECTED:
+            await self.stop()
+        
+        # Definir configuração customizada
+        self.currentMode = WhoToListenState.CUSTOM
+        self.publisherAddress = address
+        self.subscriberPort = port
+        self.subscriberUrl = f"tcp://{address}:{port}"
+        
+        # Reiniciar
+        await self.start()
+        
+        self.logger.info(f"Now listening on custom address: {self.subscriberUrl}")
     
     async def _checkMessageTimeout(self):
         """

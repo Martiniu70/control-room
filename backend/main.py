@@ -1,12 +1,11 @@
 """
-Main Application - FastAPI com WebSocket integrado
+Main Application - FastAPI com WebSocket integrado (Refactored)
 
 Resumo:
 Aplicação principal que junta tudo: FastAPI server, WebSocket endpoints, streaming
 contínuo de dados, e API REST. Configura CORS para frontend, inclui todos os routers,
-e inicia automaticamente o DataStreamer para simular dados. Também inclui endpoints
-de controlo para pausar/retomar streaming e ajustar frequências. É o "maestro"
-que coordena toda a orquestra do sistema.
+e inicia automaticamente o MockZeroMQController (modo mock) ou ZeroMQListener (modo real).
+Remove dependência do DataStreamer, usando diretamente o sistema apropriado.
 """
 
 import asyncio
@@ -21,11 +20,8 @@ from fastapi.responses import JSONResponse
 from app.core import settings
 from app.ws.webSocketRouter import router as websocket_router
 from app.ws.webSocketManager import websocketManager
-from app.ws.dataStreamer import dataStreamer
 from app.services.signalManager import signalManager
 from app.services.zeroMQListener import zeroMQListener
-from tests.mockData import CardiacMockGenerator
-from tests.mockData import EEGMockGenerator
 
 # Configurar logging
 logging.basicConfig(
@@ -39,40 +35,47 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Gere ciclo de vida da aplicação"""
     # Startup
-    logger.info("Starting Control Room Backend...")
+    logger.info("[MAIN] Starting Control Room Backend...")
     
     try:
         if settings.useRealSensors:
             # Usar dados reais
-            logger.info("Starting ZeroMQ listener for real sensor data...")
+            logger.info("[MAIN] Starting ZeroMQ listener for real sensor data...")
             await zeroMQListener.start()
-            logger.info("ZeroMQ listener started")
+            logger.info("[MAIN] ZeroMQ listener started")
         else:
-            # Modo desenvolvimento - usar mock data
-            logger.info("Starting DataStreamer for mock sensor data...")
-            await dataStreamer.start()
-            logger.info("DataStreamer started")
+            # Usar mock data via ZeroMQ 
+            logger.info("[MAIN] Starting MockZeroMQ system for simulated sensor data...")
+            from tests.mockZeroMQ import mockZeroMQController
+            await mockZeroMQController.start()
+            logger.info("[MAIN] MockZeroMQ system started")
+            logger.info("[MAIN] Starting ZeroMQ listener for fake sensor data...")
+            await zeroMQListener.start()
+            logger.info("[MAIN] ZeroMQ listener started")
         
         yield  # Aplicação roda aqui
         
     finally:
         # Shutdown
-        logger.info("Shutting down Control Room Backend...")
+        logger.info("[MAIN] Shutting down Control Room Backend...")
         
         try:
             if settings.useRealSensors:
                 await zeroMQListener.stop()
-                logger.info("ZeroMQ listener stopped")
+                logger.info("[MAIN] ZeroMQ listener stopped")
             else:
-                await dataStreamer.stop()
-                logger.info("DataStreamer stopped")
+                from tests.mockZeroMQ import mockZeroMQController
+                await mockZeroMQController.stop()
+                logger.info("[MAIN] MockZeroMQ system stopped")
+                await zeroMQListener.stop()
+                logger.info("[MAIN] ZeroMQ listener stopped")
             
             # Limpar WebSocket connections
             await websocketManager.cleanup()
-            logger.info("WebSocket connections cleaned up")
+            logger.info("[MAIN] WebSocket connections cleaned up")
             
         except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
+            logger.error(f"[MAIN] Error during shutdown: {e}")
 
 # Criar aplicação FastAPI
 app = FastAPI(
@@ -92,7 +95,7 @@ app.add_middleware(
 )
 
 # Incluir routers WebSocket
-app.include_router(websocket_router, prefix="/api", tags=["websocket"]) #TODO isto devia ser mudado probably
+app.include_router(websocket_router, prefix="/api", tags=["websocket"])
 
 # Endpoints REST básicos
 @app.get("/")
@@ -104,7 +107,8 @@ async def root():
         "status": "running",
         "timestamp": datetime.now().isoformat(),
         "websocket_url": "/ws",
-        "docs_url": "/docs"
+        "docs_url": "/docs",
+        "dataSource": "real_sensors" if settings.useRealSensors else "mock_data"
     }
 
 @app.get("/api/status")
@@ -121,12 +125,24 @@ async def get_system_status():
             },
             "signals": signalManager.getAllSignalsStatus(),
             "system_health": signalManager.getSystemHealth(),
-            "streaming": dataStreamer.getStatus(),
             "websocket": {
                 "endpoint": "/ws",
-                "active_connections": len(getattr(app.state, 'websocket_connections', [])) #TODO fix
+                "active_connections": len(websocketManager.activeConnections)
             }
         }
+        
+        # Adicionar status específico da fonte de dados
+        if settings.useRealSensors:
+            system_status["dataSource"] = {
+                "type": "real_sensors",
+                "zeroMQListener": zeroMQListener.getStatus()
+            }
+        else:
+            from tests.mockZeroMQ import mockZeroMQController
+            system_status["dataSource"] = {
+                "type": "mock_data", 
+                "mockController": mockZeroMQController.getAllStats()
+            }
         
         return JSONResponse(content=system_status)
         
@@ -162,122 +178,205 @@ async def get_signal_status(signal_type: str):
             content={"error": "Internal server error"}
         )
 
-# Endpoints de controlo do streaming
-@app.post("/api/streaming/start") #TODO Testar adicionando botão POST request no frontend
-async def start_streaming():
-    """Inicia streaming de dados"""
+# Endpoints de controlo do sistema mock (apenas se mock ativo)
+@app.post("/api/mock/start")
+async def start_mock_system():
+    """Inicia sistema mock (apenas se USE_REAL_SENSORS=False)"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Cannot start mock system when USE_REAL_SENSORS=True"}
+        )
+    
     try:
-        await dataStreamer.start()
+        from tests.mockZeroMQ import mockZeroMQController
+        if mockZeroMQController.isRunning():
+            return {"status": "already_running", "timestamp": datetime.now().isoformat()}
+        
+        await mockZeroMQController.start()
         return {"status": "started", "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        logger.error(f"Error starting streaming: {e}")
+        logger.error(f"Error starting mock system: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
         )
 
-@app.post("/api/streaming/stop")
-async def stop_streaming(): #TODO Testar adicionando botão POST request no frontend
-    """Para streaming de dados"""
+@app.post("/api/mock/stop")
+async def stop_mock_system():
+    """Para sistema mock"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
+        )
+    
     try:
-        logger.info(f"Client is trying to stop streaming")
-        await dataStreamer.stop()
+        from tests.mockZeroMQ import mockZeroMQController
+        logger.info(f"Client is trying to stop mock system")
+        await mockZeroMQController.stop()
         return {"status": "stopped", "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        logger.error(f"Error stopping streaming: {e}")
+        logger.error(f"Error stopping mock system: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
         )
 
-@app.post("/api/streaming/pause") #TODO Testar adicionando botão POST request no frontend
-async def pause_streaming():
-    """Pausa streaming de dados"""
+@app.post("/api/mock/pause")
+async def pause_mock_system():
+    """Pausa sistema mock"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
+        )
+    
     try:
-        await dataStreamer.pause()
+        from tests.mockZeroMQ import mockZeroMQController
+        await mockZeroMQController.pause()
         return {"status": "paused", "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        logger.error(f"Error pausing streaming: {e}")
+        logger.error(f"Error pausing mock system: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
         )
 
-@app.post("/api/streaming/resume")
-async def resume_streaming(): #TODO Testar adicionando botão POST request no frontend
-    """Retoma streaming de dados"""
+@app.post("/api/mock/resume")
+async def resume_mock_system():
+    """Retoma sistema mock"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
+        )
+    
     try:
-        await dataStreamer.resume()
+        from tests.mockZeroMQ import mockZeroMQController
+        await mockZeroMQController.resume()
         return {"status": "resumed", "timestamp": datetime.now().isoformat()}
     except Exception as e:
-        logger.error(f"Error resuming streaming: {e}")
+        logger.error(f"Error resuming mock system: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
         )
 
-@app.get("/api/streaming/status")
-async def get_streaming_status(): 
-    """Status do streaming"""
+@app.get("/api/mock/status")
+async def get_mock_status():
+    """Status do sistema mock"""
+    if settings.useRealSensors:
+        return JSONResponse(content={
+            "available": False,
+            "reason": "USE_REAL_SENSORS=True"
+        })
+    
     try:
-        return JSONResponse(content=dataStreamer.getStatus())
+        from tests.mockZeroMQ import mockZeroMQController
+        return JSONResponse(content=mockZeroMQController.getAllStats())
     except Exception as e:
-        logger.error(f"Error getting streaming status: {e}")
+        logger.error(f"Error getting mock status: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": "Internal server error"}
         )
 
-@app.post("/api/streaming/frequency/{signal_type}") #TODO Testar adicionando parametros no frontend
-async def adjust_frequency(signal_type: str, frequency: float):
-    """Ajusta frequência de um tipo de sinal"""
+@app.post("/api/mock/topics/{topic}/frequency")
+async def adjust_topic_frequency(topic: str, frequency: float):
+    """Ajusta frequência de um tópico específico"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
+        )
+    
     try:
-        await dataStreamer.adjustFrequency(signal_type, frequency)
+        from tests.mockZeroMQ import mockZeroMQController
+        mockZeroMQController.adjustTopicFrequency(topic, frequency)
         return {
-            "signal_type": signal_type,
+            "topic": topic,
             "new_frequency": frequency,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"Error adjusting frequency for {signal_type}: {e}")
+        logger.error(f"Error adjusting frequency for {topic}: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
         )
 
-# Endpoint para injetar anomalias manualmente (desenvolvimento)
-@app.post("/api/testing/inject_anomaly") #TODO Testar adicionando parametros no frontend
-async def inject_anomaly(signal_type: str, anomaly_type: str):
-    """Injeta anomalia manualmente para teste"""
+@app.post("/api/mock/topics/{topic}/anomaly")
+async def inject_topic_anomaly(topic: str, anomaly_type: str, duration: float = 5.0):
+    """Injeta anomalia em tópico específico"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
+        )
+    
     try:
-        if signal_type == "cardiac":
-            mock = CardiacMockGenerator()
-            anomaly_data = mock.generateAnomalyData(anomaly_type)
-        elif signal_type == "eeg":
-            mock = EEGMockGenerator()
-            anomaly_data = mock.generateAnomalyData(anomaly_type)
-        else:
-            return JSONResponse(
-                status_code=400,
-                content={"error": f"Unknown signal type: {signal_type}"}
-            )
-        
-        # Enviar dados anómalos
-        await signalManager.processZeroMQData({
-            "timestamp": datetime.now().timestamp(),
-            "source": f"manual_anomaly_injection",
-            "data": anomaly_data
-        })
+        from tests.mockZeroMQ import mockZeroMQController
+        mockZeroMQController.forceTopicAnomaly(topic, anomaly_type, duration)
         
         return {
             "injected": True,
-            "signal_type": signal_type,
+            "topic": topic,
             "anomaly_type": anomaly_type,
+            "duration": duration,
             "timestamp": datetime.now().isoformat()
         }
         
     except Exception as e:
         logger.error(f"Error injecting anomaly: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+@app.post("/api/mock/topics/{topic}/enable")
+async def enable_topic(topic: str):
+    """Ativa tópico específico"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
+        )
+    
+    try:
+        from tests.mockZeroMQ import mockZeroMQController
+        mockZeroMQController.enableTopic(topic)
+        return {
+            "topic": topic,
+            "status": "enabled",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error enabling topic {topic}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+@app.post("/api/mock/topics/{topic}/disable")
+async def disable_topic(topic: str):
+    """Desativa tópico específico"""
+    if settings.useRealSensors:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
+        )
+    
+    try:
+        from tests.mockZeroMQ import mockZeroMQController
+        mockZeroMQController.disableTopic(topic)
+        return {
+            "topic": topic,
+            "status": "disabled",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error disabling topic {topic}: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}

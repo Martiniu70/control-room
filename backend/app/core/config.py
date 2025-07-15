@@ -221,6 +221,132 @@ class ZeroMQConfig:
             print(f"  Primary topics: Polar_PPI, CardioWheel_ECG, BrainAcess_EEG")
             print(f"  Timeout: {self.timeout}ms, Message timeout: {self.messageTimeout}s")
 
+class MockZeroMQConfig:
+    """Configurações para sistema mock ZeroMQ"""
+    def __init__(self):
+        # Configurações do publisher mock
+        self.mockPublisherAddress = os.getenv('MOCK_ZMQ_PUBLISHER_ADDRESS', '127.0.0.1')  # Local
+        self.mockPublisherPort = int(os.getenv('MOCK_ZMQ_PUBLISHER_PORT', 22882))          # Diferente do real
+        self.mockPublisherUrl = f"tcp://{self.mockPublisherAddress}:{self.mockPublisherPort}"
+        
+        # Configurações de socket mock
+        self.mockLingerTime = 1000                  # ms
+        self.mockSendHighWaterMark = 1000          # Limite de mensagens em buffer
+        self.mockSocketType = "PUB"                # Tipo de socket (PUB para enviar)
+        
+        # Frequências de publicação por tópico (Hz)
+        self.topicFrequencies = {
+            "Polar_PPI": 1.0,                      # 1Hz - eventos de batimento cardíaco
+            "CardioWheel_ECG": 50.0,               # 50Hz - chunks de ECG (1000Hz real / 20 samples por chunk)
+            "CardioWheel_ACC": 10.0,               # 10Hz - chunks de acelerómetro (100Hz real / 10 samples por chunk)
+            "CardioWheel_GYR": 10.0,               # 10Hz - chunks de giroscópio (100Hz real / 10 samples por chunk)
+            "BrainAcess_EEG": 25.0,                # 25Hz - chunks de EEG (250Hz real / 10 samples por chunk)
+            "Control": 0.1,                        # 0.1Hz - mensagens de controlo ocasionais
+            "Timestamp": 0.2,                      # 0.2Hz - timestamps ocasionais
+            "Cfg": 0.05                            # 0.05Hz - configurações raras
+        }
+        
+        # Configurações de chunk por tópico (quantos samples por mensagem)
+        self.topicChunkSizes = {
+            "Polar_PPI": 1,                        # 1 evento PPI por mensagem
+            "CardioWheel_ECG": 20,                 # 20 samples ECG por chunk (20ms @ 1000Hz)
+            "CardioWheel_ACC": 10,                 # 10 samples ACC por chunk (100ms @ 100Hz)
+            "CardioWheel_GYR": 10,                 # 10 samples GYR por chunk (100ms @ 100Hz)
+            "BrainAcess_EEG": 10,                  # 10 samples EEG por chunk (40ms @ 250Hz)
+            "Control": 1,                          # 1 mensagem de controlo
+            "Timestamp": 1,                        # 1 timestamp
+            "Cfg": 1                               # 1 configuração
+        }
+        
+        # Configurações de anomalias mock
+        self.anomalyInjection = {
+            "enabled": True,                       # Ativar injeção de anomalias
+            "globalChance": 0.02,                  # 2% chance global por ciclo
+            "minInterval": 10.0,                   # Segundos mínimos entre anomalias
+            "maxAnomaliesPerMinute": 3,            # Máximo de anomalias por minuto
+            "topicChances": {                      # Chances específicas por tópico
+                "Polar_PPI": 0.05,                # 5% chance para HR
+                "CardioWheel_ECG": 0.03,           # 3% chance para ECG
+                "CardioWheel_ACC": 0.04,           # 4% chance para ACC
+                "CardioWheel_GYR": 0.04,           # 4% chance para GYR
+                "BrainAcess_EEG": 0.03             # 3% chance para EEG
+            }
+        }
+        
+        # Configurações de dados base para geradores
+        self.generatorBaseConfig = {
+            "cardiac": {
+                "baseHr": 75,                      # BPM base
+                "hrVariationStd": 5,               # Desvio padrão da variação HR
+                "ecgAmplitudeBase": 1650,          # Valor baseline ADC para ECG
+                "ecgNoiseStd": 10                  # Ruído ADC para ECG
+            },
+            "accelerometer": {
+                "baselineX": 7500,                 # Baseline ADC para X
+                "baselineY": 0,                    # Baseline ADC para Y
+                "baselineZ": 3100,                 # Baseline ADC para Z (inclui gravidade)
+                "noiseStd": 5                      # Ruído ADC
+            },
+            "gyroscope": {
+                "baselineX": 0,                    # Baseline ADC para X
+                "baselineY": 0,                    # Baseline ADC para Y
+                "baselineZ": 0,                    # Baseline ADC para Z
+                "noiseStd": 2                      # Ruído ADC
+            },
+            "eeg": {
+                "channelCount": 4,                 # Número de canais
+                "channelNames": ["ch0", "ch1", "ch2", "ch3"],
+                "amplitudeBase": 20,               # Amplitude base μV
+                "noiseStd": 5                      # Ruído μV
+            }
+        }
+        
+        # Configurações de timing e sincronização
+        self.timingConfig = {
+            "timestampFormat": "float",            # Formato do timestamp (float em segundos)
+            "timestampPrecision": 3,               # Casas decimais no timestamp
+            "chunkTimingJitter": 0.001,            # Jitter máximo entre chunks (1ms)
+            "systemStartTime": None,               # Será definido no arranque
+            "useRealtimeTimestamps": True          # Usar timestamps de tempo real
+        }
+        
+        # Configurações de debug específicas para mock
+        self.debugConfig = {
+            "enableTopicFiltering": True,          # Permitir filtrar tópicos específicos
+            "logAllMessages": False,               # Log de todas as mensagens (verbose)
+            "logMessageSizes": True,               # Log do tamanho das mensagens
+            "logTimingStats": True,                # Log de estatísticas de timing
+            "validateMessageFormat": True,         # Validar formato antes de enviar
+            "topicDebugLevels": {                  # Níveis de debug por tópico
+                "Polar_PPI": "INFO",
+                "CardioWheel_ECG": "DEBUG",
+                "CardioWheel_ACC": "INFO",
+                "CardioWheel_GYR": "INFO",
+                "BrainAcess_EEG": "INFO",
+                "Control": "WARNING",
+                "Timestamp": "WARNING",
+                "Cfg": "WARNING"
+            }
+        }
+        
+        # Configurações de performance e limites
+        self.performanceConfig = {
+            "maxMessagesPerSecond": 200,           # Limite global de mensagens/segundo
+            "maxMessageSize": 10240,               # Tamanho máximo da mensagem (10KB)
+            "bufferSize": 1000,                    # Tamanho do buffer de envio
+            "batchSendEnabled": False,             # Envio em lote (para otimização futura)
+            "compressionEnabled": False,           # Compressão de mensagens (para otimização futura)
+            "metricsUpdateInterval": 5.0           # Intervalo de atualização de métricas
+        }
+        
+        # Log configuração ao inicializar se debug ativo
+        if os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes'):
+            print(f"Mock ZeroMQ Config:")
+            print(f"  Publisher: {self.mockPublisherUrl}")
+            print(f"  Topics: {list(self.topicFrequencies.keys())}")
+            print(f"  Frequencies: ECG={self.topicFrequencies['CardioWheel_ECG']}Hz, PPI={self.topicFrequencies['Polar_PPI']}Hz")
+            print(f"  Anomalies: {'Enabled' if self.anomalyInjection['enabled'] else 'Disabled'}")
+
 class WebSocketConfig:
     """Configurações WebSocket"""
     def __init__(self):
@@ -609,7 +735,7 @@ class Settings:
         self.port = int(os.getenv('PORT', 8000))
 
         # Modo de operação (teste ou real)
-        self.useRealSensors = os.getenv('USE_REAL_SENSORS', 'True').lower() in ('true', '1', 'yes')
+        self.useRealSensors = os.getenv('USE_REAL_SENSORS', 'False').lower() in ('true', '1', 'yes')
         
         # CORS
         cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
@@ -617,12 +743,13 @@ class Settings:
         
         # Logging
         self.logLevel = os.getenv('LOG_LEVEL', 'DEBUG')
-        self.testLogLevel = os.getenv('TEST_LOG_LEVEL', 'WARNING')
+        self.testLogLevel = os.getenv('TEST_LOG_LEVEL', 'WARNING') # TODO Acho que já esta deprecated após ultimo refacto , mas tenho que averiguar melhor
         
         # Sub-configurações
         self.zeromq = ZeroMQConfig()
         self.websocket = WebSocketConfig()
         self.signals = SignalConfig()
+        self.mockZeromq = MockZeroMQConfig()
         
         # Carregar .env se existir
         self._loadEnvFile()
@@ -654,5 +781,7 @@ if settings.debugMode:
     print(f"Log level: {settings.logLevel}")
     print(f"ZeroMQ Sensor port: {settings.zeromq.subscriberPort}")
     print(f"WebSocket update interval: {settings.websocket.updateInterval}s")
-    print(f"Cardiac thresholds: Bradycardia={settings.signals.cardiacConfig['hr']['bradycardiaThreshold']}, Tachycardia={settings.signals.cardiacConfig['hr']['tachycardiaThreshold']}")
-    print(f"EEG channels: {settings.signals.eegConfig['raw']['channels']}, Range: {settings.signals.eegConfig['raw']['normalRange']}")
+    #print(f"Cardiac thresholds: Bradycardia={settings.signals.cardiacConfig['hr']['bradycardiaThreshold']}, Tachycardia={settings.signals.cardiacConfig['hr']['tachycardiaThreshold']}")
+    #print(f"EEG channels: {settings.signals.eegConfig['raw']['channels']}, Range: {settings.signals.eegConfig['raw']['normalRange']}")
+    print(f"Mock ZeroMQ Publisher: {settings.mockZeromq.mockPublisherUrl}")
+    print(f"Mock frequencies: ECG={settings.mockZeromq.topicFrequencies['CardioWheel_ECG']}Hz")

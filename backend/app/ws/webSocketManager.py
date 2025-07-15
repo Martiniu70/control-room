@@ -14,6 +14,7 @@ from typing import Set, Dict, Any, Optional
 from datetime import datetime
 from fastapi import WebSocket
 from ..services.signalManager import signalManager
+from ..services.zeroMQListener import zeroMQListener
 from ..core import eventManager, settings
 
 class WebSocketManager:
@@ -177,19 +178,9 @@ class WebSocketManager:
             # Detectar fonte de dados dinamicamente
             dataSource = "real_sensors" if settings.useRealSensors else "mock_data"
             
-            # Status específico por fonte
-            if settings.useRealSensors:
-                # Dados reais - usar ZeroMQListener
-                from ..services.zeroMQListener import zeroMQListener
-                sourceStatus = zeroMQListener.getStatus()
-                sourceUptime = zeroMQListener._getUptime()
-                sourceCounters = sourceStatus["stats"]
-            else:
-                # Dados mock - usar DataStreamer
-                from .dataStreamer import dataStreamer
-                sourceStatus = dataStreamer.getStatus()
-                sourceUptime = sourceStatus["uptime"]
-                sourceCounters = sourceStatus["counters"]
+            sourceStatus = zeroMQListener.getStatus()
+            sourceUptime = zeroMQListener._getUptime()
+            sourceCounters = sourceStatus["stats"]
             
             # Status geral do sistema
             message = {
