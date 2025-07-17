@@ -101,6 +101,12 @@ async def _handleClientMessage(websocket: WebSocket, clientId: str, message: str
                 "type": "subscription.confirmed",
                 "subscriptions": data.get("signals", [])
             })
+        elif messageType == "request.available_signals":
+            signals = websocketManager.getActiveSignals()
+            await websocket.send_json({
+                "type" : "response.available_signals",
+                "availableSignals": signals
+            })
             
         else:
             # Tipo de mensagem desconhecido

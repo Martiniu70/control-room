@@ -25,6 +25,11 @@ interface BackendSignalUpdate {
   anomalies?: string[];      // Lista de anomalias detectadas (opcional)
 }
 
+interface BackendSignalsResponse {
+  type: "response.available_signals";
+  availableSignals: string[];
+}
+
 // Mensagem de alerta de anomalia específica
 interface BackendAnomalyAlert {
   type: 'anomaly.alert';     // Tipo específico para anomalias
@@ -48,7 +53,12 @@ interface BackendSystemHeartbeat {
 }
 
 // União de todos os tipos de mensagens possíveis do backend
-type BackendMessage = BackendSignalUpdate | BackendAnomalyAlert | BackendSystemHeartbeat | {
+type BackendMessage = 
+  | BackendSignalUpdate 
+  | BackendAnomalyAlert 
+  | BackendSystemHeartbeat 
+  | BackendSignalsResponse
+  | {
   type: 'zmq.connected' | 'zmq.error' | 'zmq.warning' | 'zmq.heartbeat' | 'connection.established';
   [key: string]: any; // Permite propriedades adicionais
 };
@@ -74,6 +84,9 @@ interface UseWebSocketReturn {
   // Lista das últimas anomalias detectadas
   recentAnomalies: string[];
   
+  // Sinais disponiveis
+  availableSignals: string[];
+
   // Funções para controlar a conexão manualmente
   connect: () => void;
   disconnect: () => void;
@@ -101,6 +114,7 @@ export const useWebSocket = (
   const [latestEegData, setLatestEegData] = useState<{ raw?: SignalPoint; bands?: SignalPoint } | null>(null);
   const [latestCameraData, setLatestCameraData] = useState<{ landmarks?: SignalPoint; blinks?: SignalPoint } | null>(null);
   const [latestUnityData, setLatestUnityData] = useState<{ steering?: SignalPoint; speed?: SignalPoint } | null>(null);
+  const [availableSignals, setAvailableSignals] = useState<string[]>([]);
   
   // Estado da conexão WebSocket
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
@@ -170,6 +184,8 @@ export const useWebSocket = (
         });
         // Reset do contador de tentativas após sucesso
         reconnectAttempts.current = 0;
+
+        wsRef.current?.send(JSON.stringify({type: "request.available_signals"}));
       };
 
       // Quando recebe uma mensagem do backend
@@ -291,6 +307,12 @@ export const useWebSocket = (
       case 'system.heartbeat':
         console.log('System heartbeat received:', message);
         // Aqui podias actualizar estado do sistema se necessário
+        break;
+      
+      case "response.available_signals":
+        if(Array.isArray(message.availableSignals)){
+          setAvailableSignals(message.availableSignals);
+        }
         break;
         
       case 'zmq.connected':
@@ -434,6 +456,8 @@ export const useWebSocket = (
     
     // Anomalias
     recentAnomalies,
+
+    availableSignals,
     
     // Controlo manual
     connect,
