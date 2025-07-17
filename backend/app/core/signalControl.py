@@ -42,6 +42,7 @@ class ComponentState(Enum):
     STOPPED = "stopped"
     ERROR = "error"
     INITIALIZING = "initializing"
+    UNKNOWN = "unknown"
 
 class OperationType(Enum):
     """Tipos de operações de controlo"""
@@ -296,16 +297,16 @@ class SignalControlManager:
             
             components_to_update = [component] if component else self.components.keys()
             
-            for comp_name in components_to_update:
-                if comp_name not in self.components:
-                    results[comp_name] = False
+            for compName in components_to_update:
+                if compName not in self.components:
+                    results[compName] = False
                     continue
                 
-                comp = self.components[comp_name]
+                comp = self.components[compName]
                 
                 # Verificar se sinal existe no componente
                 if signal not in comp.getAvailableSignals():
-                    results[comp_name] = False
+                    results[compName] = False
                     continue
                 
                 try:
@@ -315,25 +316,25 @@ class SignalControlManager:
                         timeout=self.operationTimeout
                     )
                     
-                    results[comp_name] = success
+                    results[compName] = success
                     
                     if success:
                         # Atualizar estado global
-                        self.globalSignalState[comp_name][signal] = SignalState.ACTIVE
+                        self.globalSignalState[compName][signal] = SignalState.ACTIVE
                         
                         # Emitir evento
                         await eventManager.emit(
                             SignalControlEvents.SIGNAL_ENABLED,
-                            SignalControlEventData.signalStateChange(signal, comp_name, True)
+                            SignalControlEventData.signalStateChange(signal, compName, True)
                         )
                     
                 except asyncio.TimeoutError:
-                    results[comp_name] = False
-                    self.logger.error(f"Timeout enabling {signal} in {comp_name}")
+                    results[compName] = False
+                    self.logger.error(f"Timeout enabling {signal} in {compName}")
                     
                 except Exception as e:
-                    results[comp_name] = False
-                    self.logger.error(f"Error enabling {signal} in {comp_name}: {e}")
+                    results[compName] = False
+                    self.logger.error(f"Error enabling {signal} in {compName}: {e}")
             
             # Atualizar estatísticas
             self.stats["operationsExecuted"] += 1
@@ -366,16 +367,16 @@ class SignalControlManager:
             
             components_to_update = [component] if component else self.components.keys()
             
-            for comp_name in components_to_update:
-                if comp_name not in self.components:
-                    results[comp_name] = False
+            for compName in components_to_update:
+                if compName not in self.components:
+                    results[compName] = False
                     continue
                 
-                comp = self.components[comp_name]
+                comp = self.components[compName]
                 
                 # Verificar se sinal existe no componente
                 if signal not in comp.getAvailableSignals():
-                    results[comp_name] = False
+                    results[compName] = False
                     continue
                 
                 try:
@@ -385,25 +386,25 @@ class SignalControlManager:
                         timeout=self.operationTimeout
                     )
                     
-                    results[comp_name] = success
+                    results[compName] = success
                     
                     if success:
                         # Atualizar estado global
-                        self.globalSignalState[comp_name][signal] = SignalState.INACTIVE
+                        self.globalSignalState[compName][signal] = SignalState.INACTIVE
                         
                         # Emitir evento
                         await eventManager.emit(
                             SignalControlEvents.SIGNAL_DISABLED,
-                            SignalControlEventData.signalStateChange(signal, comp_name, False)
+                            SignalControlEventData.signalStateChange(signal, compName, False)
                         )
                     
                 except asyncio.TimeoutError:
-                    results[comp_name] = False
-                    self.logger.error(f"Timeout disabling {signal} in {comp_name}")
+                    results[compName] = False
+                    self.logger.error(f"Timeout disabling {signal} in {compName}")
                     
                 except Exception as e:
-                    results[comp_name] = False
-                    self.logger.error(f"Error disabling {signal} in {comp_name}: {e}")
+                    results[compName] = False
+                    self.logger.error(f"Error disabling {signal} in {compName}: {e}")
             
             # Atualizar estatísticas
             self.stats["operationsExecuted"] += 1
@@ -430,22 +431,22 @@ class SignalControlManager:
         async with self.operationLock:
             results = {}
             
-            for comp_name, comp in self.components.items():
+            for compName, comp in self.components.items():
                 try:
                     comp_results = await asyncio.wait_for(
                         comp.enableAllSignals(),
                         timeout=self.batchOperationTimeout
                     )
-                    results[comp_name] = comp_results
+                    results[compName] = comp_results
                     
                     # Atualizar estado global
                     for signal, success in comp_results.items():
                         if success:
-                            self.globalSignalState[comp_name][signal] = SignalState.ACTIVE
+                            self.globalSignalState[compName][signal] = SignalState.ACTIVE
                     
                 except Exception as e:
-                    self.logger.error(f"Error enabling all signals in {comp_name}: {e}")
-                    results[comp_name] = {}
+                    self.logger.error(f"Error enabling all signals in {compName}: {e}")
+                    results[compName] = {}
             
             # Emitir evento global
             await eventManager.emit(
@@ -475,22 +476,22 @@ class SignalControlManager:
         async with self.operationLock:
             results = {}
             
-            for comp_name, comp in self.components.items():
+            for compName, comp in self.components.items():
                 try:
                     comp_results = await asyncio.wait_for(
                         comp.disableAllSignals(),
                         timeout=self.batchOperationTimeout
                     )
-                    results[comp_name] = comp_results
+                    results[compName] = comp_results
                     
                     # Atualizar estado global
                     for signal, success in comp_results.items():
                         if success:
-                            self.globalSignalState[comp_name][signal] = SignalState.INACTIVE
+                            self.globalSignalState[compName][signal] = SignalState.INACTIVE
                     
                 except Exception as e:
-                    self.logger.error(f"Error disabling all signals in {comp_name}: {e}")
-                    results[comp_name] = {}
+                    self.logger.error(f"Error disabling all signals in {compName}: {e}")
+                    results[compName] = {}
             
             # Emitir evento global
             await eventManager.emit(
@@ -509,7 +510,7 @@ class SignalControlManager:
         
         Args:
             operations: Lista de operações no formato:
-                [{"action": "enable", "signal": "signal_name", "component": "comp_name"}, ...]
+                [{"action": "enable", "signal": "signal_name", "component": "compName"}, ...]
         
         Returns:
             Resultados detalhados da operação em lote
@@ -600,18 +601,21 @@ class SignalControlManager:
             Estado completo de todos os componentes e sinais
         """
         # Atualizar estados atuais
-        for comp_name, comp in self.components.items():
-            self.componentStates[comp_name] = comp.getComponentState()
+        for compName, comp in self.components.items():
+            self.componentStates[compName] = comp.getComponentState()
             
             for signal in comp.getAvailableSignals():
-                self.globalSignalState[comp_name][signal] = comp.getSignalState(signal)
+                self.globalSignalState[compName][signal] = comp.getSignalState(signal)
         
         return {
             "timestamp": datetime.now().isoformat(),
             "components": {
                 name: {
                     "state": self.componentStates.get(name, ComponentState.UNKNOWN).value,
-                    "signals": self.globalSignalState.get(name, {}),
+                    "signals": { 
+                        sinal: estado.value  # Converter Enum para string
+                        for sinal, estado in self.globalSignalState.get(name, {}).items()
+                    },
                     "summary": comp.getControlSummary()
                 }
                 for name, comp in self.components.items()
@@ -712,8 +716,8 @@ class SignalControlManager:
             return
         
         try:
-            current_state = self.getGlobalState()
-            signalStateManager.saveState(current_state)
+            currentState = self.getGlobalState()
+            signalStateManager.saveState(currentState)
         except Exception as e:
             self.logger.error(f"Error saving state: {e}")
 
