@@ -5,6 +5,8 @@ Resumo:
 Processa dados brutos recebidos do ZeroMQListener e converte-os para o formato esperado
 pelo SignalManager. Cada tópico ZeroMQ tem o seu próprio método de processamento específico
 que lida com as particularidades dos dados (conversões, validações, formatação).
+Inclui controlo granular de sinais através do sistema Signal Control para filtering
+por tópicos ZeroMQ individuais.
 
 Funcionalidades principais:
 - Processamento específico por tópico (Polar_PPI, CardioWheel_ECG, BrainAccess_EEG, etc.)
@@ -14,6 +16,7 @@ Funcionalidades principais:
 - Gestão de timestamps e reconstrução de ordem temporal em chunks
 - Logging detalhado para debugging no simulador
 - Tratamento de exceções específicas por tipo de dados
+- Controlo granular por tópico através do Signal Control
 
 O processor atua como adaptador entre o formato de dados ZeroMQ e a arquitetura
 interna do backend, garantindo que todos os dados chegam formatados corretamente
@@ -31,14 +34,15 @@ import json
 import logging
 import msgpack
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Set
 import numpy as np
 
 from ..core import settings, eventManager
 from ..core.exceptions import ZeroMQProcessingError, TopicValidationError, UnknownTopicError
+from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
 
-class ZeroMQProcessor:
-    """Processador de dados ZeroMQ para conversão e formatação"""
+class ZeroMQProcessor(SignalControlInterface):
+    """Processador de dados ZeroMQ para conversão e formatação com controlo de sinais"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -49,13 +53,19 @@ class ZeroMQProcessor:
         self.processingConfig = zmqConfig.topicProcessingConfig  
         self.validationConfig = zmqConfig.topicValidationConfig
         
+        # Signal Control properties
+        self.availableSignals = list(self.topicSignalMapping.keys())
+        self.activeSignals: Set[str] = set(self.availableSignals)  # Todos ativos por default
+        
         # Estatísticas de processamento por tópico
         self.processingStats = {
             "totalProcessed": 0,
             "totalErrors": 0,
+            "totalFiltered": 0,
             "byTopic": {topic: {
                 "processed": 0,
                 "errors": 0,
+                "filtered": 0,
                 "lastProcessed": None,
                 "lastError": None
             } for topic in self.topicSignalMapping.keys()}
@@ -64,8 +74,53 @@ class ZeroMQProcessor:
         # Cache para timestamps e ordem de chunks
         self.chunkCache = {}
         
-        self.logger.info(f"ZeroMQProcessor initialized for topics: {list(self.topicSignalMapping.keys())}")
+        # Registar no manager central de Signal Control
+        signalControlManager.registerComponent("processor", self)
+        
+        self.logger.info(f"ZeroMQProcessor initialized with Signal Control for topics: {list(self.topicSignalMapping.keys())}")
         self.logger.debug(f"Processing config loaded: {len(self.processingConfig)} topic configs")
+    
+    # Signal Control Interface Implementation
+    
+    def getAvailableSignals(self) -> List[str]:
+        """Retorna lista de tópicos disponíveis para processamento"""
+        return self.availableSignals.copy()
+    
+    def getActiveSignals(self) -> List[str]:
+        """Retorna lista de tópicos atualmente ativos"""
+        return list(self.activeSignals)
+    
+    async def enableSignal(self, signal: str) -> bool:
+        """Ativa processamento de um tópico específico"""
+        if signal not in self.availableSignals:
+            self.logger.warning(f"Signal Control: Cannot enable unknown signal {signal}")
+            return False
+        
+        self.activeSignals.add(signal)
+        self.logger.info(f"Signal Control: Enabled topic {signal}")
+        return True
+    
+    async def disableSignal(self, signal: str) -> bool:
+        """Desativa processamento de um tópico específico"""
+        self.activeSignals.discard(signal)
+        self.logger.info(f"Signal Control: Disabled topic {signal}")
+        return True
+    
+    def getSignalState(self, signal: str) -> SignalState:
+        """Retorna estado atual de um sinal"""
+        if signal not in self.availableSignals:
+            return SignalState.UNKNOWN
+        
+        if signal in self.activeSignals:
+            return SignalState.ACTIVE
+        else:
+            return SignalState.INACTIVE
+    
+    def getComponentState(self) -> ComponentState:
+        """Retorna estado atual do componente"""
+        return ComponentState.RUNNING  # Processor é sempre considerado running se inicializado
+    
+    # Core Processing Methods
     
     async def processTopicData(self, topic: str, rawData: bytes) -> Optional[Dict[str, Any]]:
         """
@@ -76,7 +131,7 @@ class ZeroMQProcessor:
             rawData: Dados brutos em bytes (msgpack ou JSON)
             
         Returns:
-            Dados formatados para o SignalManager ou None se erro/inválido
+            Dados formatados para o SignalManager ou None se erro/inválido/filtrado
             
         Raises:
             UnknownTopicError: Se tópico não é reconhecido
@@ -90,6 +145,13 @@ class ZeroMQProcessor:
             if topic not in self.topicSignalMapping:
                 availableTopics = list(self.topicSignalMapping.keys())
                 raise UnknownTopicError(topic, availableTopics)
+            
+            # Filtering via Signal Control
+            if topic not in self.activeSignals:
+                self.processingStats["totalFiltered"] += 1
+                self.processingStats["byTopic"][topic]["filtered"] += 1
+                self.logger.debug(f"Signal Control: Topic {topic} filtered")
+                return None
             
             self.logger.debug(f"Processing data from topic: {topic}")
             
@@ -270,21 +332,6 @@ class ZeroMQProcessor:
             Dados formatados para SignalManager
         """
 
-
-        # TODO FILTRO DE DEBUG TEMPORÁRIO
-        DEBUG_FILTER = "ALL"  # ← Mudar para "GYR", "ECG", "ALL", ou "NONE"
-        
-        if DEBUG_FILTER == "ACC" and topic != "CardioWheel_ACC":
-            return None  # Silenciar tudo exceto ACC
-        elif DEBUG_FILTER == "GYR" and topic != "CardioWheel_GYR":
-            return None  # Silenciar tudo exceto GYR
-        elif DEBUG_FILTER == "ECG" and topic != "CardioWheel_ECG":
-            return None  # Silenciar tudo exceto ECG
-        elif DEBUG_FILTER == "NONE":
-            return None  # Silenciar tudo
-        # Se DEBUG_FILTER == "ALL", processa normalmente
-
-
         # Mapeamento de tópicos para métodos de processamento
         topicProcessors = {
             "Polar_PPI": self._processPolarPPI,
@@ -442,7 +489,6 @@ class ZeroMQProcessor:
             self.logger.debug(f"Extracted {len(ecgRawValues)} ECG raw values, range: {min(ecgRawValues) if ecgRawValues else 'N/A'} to {max(ecgRawValues) if ecgRawValues else 'N/A'}")
             
             # Conversão de 16-bit ADC para milivolts
-            # TODO AVERIGUAR, por enqianto assumindo: 16-bit signed (-32768 a +32767) para range ±5mV
             conversionFactor = 5.0 / 32768.0  # mV por ADC unit
             baselineOffset = 1650  # Valor baseline típico observado nos dados
             
@@ -619,7 +665,6 @@ class ZeroMQProcessor:
                             rawValues.append(rawValue)
                             
                             # Converter para m/s²
-                            # TODO  Super incerto.... Aplicar offset específico por eixo baseado nos dados observados
                             if axis.upper() == 'X':
                                 adjustedValue = rawValue - 7500  # Baseline observado em X
                             elif axis.upper() == 'Y':
@@ -936,18 +981,56 @@ class ZeroMQProcessor:
         Retorna estatísticas de processamento para monitoring.
         
         Returns:
-            Estatísticas detalhadas por tópico
+            Estatísticas detalhadas por tópico incluindo dados de Signal Control
         """
         
         return {
             "totalProcessed": self.processingStats["totalProcessed"],
             "totalErrors": self.processingStats["totalErrors"],
+            "totalFiltered": self.processingStats["totalFiltered"],
             "successRate": (
                 self.processingStats["totalProcessed"] / 
                 max(1, self.processingStats["totalProcessed"] + self.processingStats["totalErrors"])
             ),
+            "filterRate": (
+                self.processingStats["totalFiltered"] / 
+                max(1, self.processingStats["totalProcessed"] + self.processingStats["totalErrors"] + self.processingStats["totalFiltered"])
+            ),
             "byTopic": self.processingStats["byTopic"].copy(),
             "supportedTopics": list(self.topicSignalMapping.keys()),
+            "signalControl": {
+                "availableSignals": self.getAvailableSignals(),
+                "activeSignals": self.getActiveSignals(),
+                "componentState": self.getComponentState().value,
+                "filteredTopics": [topic for topic in self.availableSignals if topic not in self.activeSignals]
+            },
+            "lastUpdate": datetime.now().isoformat()
+        }
+    
+    def getControlSummary(self) -> Dict[str, Any]:
+        """
+        Retorna resumo do estado de controlo do componente.
+        
+        Returns:
+            Resumo com estatísticas e estado atual
+        """
+        available = self.getAvailableSignals()
+        active = self.getActiveSignals()
+        
+        return {
+            "componentState": self.getComponentState().value,
+            "totalSignals": len(available),
+            "activeSignals": len(active),
+            "inactiveSignals": len(available) - len(active),
+            "availableSignals": available,
+            "activeSignalsList": active,
+            "inactiveSignalsList": [s for s in available if s not in active],
+            "filtering": {
+                "totalFiltered": self.processingStats["totalFiltered"],
+                "filteringRate": self.processingStats["totalFiltered"] / max(1, 
+                    self.processingStats["totalProcessed"] + self.processingStats["totalErrors"] + self.processingStats["totalFiltered"]
+                )
+            },
             "lastUpdate": datetime.now().isoformat()
         }
     
@@ -959,9 +1042,11 @@ class ZeroMQProcessor:
         self.processingStats = {
             "totalProcessed": 0,
             "totalErrors": 0,
+            "totalFiltered": 0,
             "byTopic": {topic: {
                 "processed": 0,
                 "errors": 0,
+                "filtered": 0,
                 "lastProcessed": None,
                 "lastError": None
             } for topic in self.topicSignalMapping.keys()}

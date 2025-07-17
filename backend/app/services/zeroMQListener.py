@@ -1,16 +1,18 @@
 """
-ZeroMQListener - Recepção de dados reais de sensores via PUB/SUB (ADAPTADO)
+ZeroMQListener - Recepção de dados reais de sensores via PUB/SUB
 
 Resumo:
 Sistema de recepção de dados em tempo real dos sensores através do protocolo ZeroMQ PUB/SUB.
 Estabelece uma conexão SUB socket que subscreve a tópicos específicos dos sensores
 (CardioWheel, Polar ARM Band, Halo EEG) e passa os dados recebidos para o ZeroMQProcessor
-para conversão e formatação antes de enviar ao SignalManager.
+para conversão e formatação antes de enviar ao SignalManager. Inclui controlo granular
+de sinais através do sistema Signal Control para filtering interno.
 
 Funcionalidades principais:
 - Conexão ZeroMQ SUB socket para receber dados de múltiplos sensores PUB
 - Subscrição automática a todos os tópicos configurados
 - Recepção de mensagens msgpack dos sensores em tempo real
+- Filtering interno de tópicos através do Signal Control
 - Delegação do processamento de dados ao ZeroMQProcessor
 - Reconexão automática em caso de falha de comunicação
 - Monitorização contínua da saúde da conexão com métricas detalhadas
@@ -18,8 +20,9 @@ Funcionalidades principais:
 - Emissão de eventos de estado para monitorização externa
 - Processamento assíncrono de mensagens com controlo da performance
 
-IMPORTANTE: Este listener apenas recebe dados brutos via ZeroMQ. Todo o processamento,
-validação e conversão é delegado ao ZeroMQProcessor para manter separação de responsabilidades.
+IMPORTANTE: Este listener subscreve a todos os tópicos via ZeroMQ mas filtra internamente
+quais processa baseado no Signal Control. Todo o processamento, validação e conversão
+é delegado ao ZeroMQProcessor para manter separação de responsabilidades.
 """
 
 import asyncio
@@ -32,6 +35,7 @@ from enum import Enum
 
 from ..core import settings, eventManager
 from ..core.exceptions import ZeroMQError
+from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
 from .zeroMQProcessor import zeroMQProcessor
 from .signalManager import signalManager
 
@@ -49,8 +53,8 @@ class WhoToListenState(Enum):
     REAL = "real"
     CUSTOM = "custom"
 
-class ZeroMQListener:
-    """Listener para recepção de dados reais de sensores via ZeroMQ PUB/SUB"""
+class ZeroMQListener(SignalControlInterface):
+    """Listener para recepção de dados reais de sensores via ZeroMQ PUB/SUB com controlo de sinais"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -70,6 +74,10 @@ class ZeroMQListener:
         # Tópicos para subscrever (configurados centralmente)
         self.topics = self.zmqConfig.topics.copy()  # Lista de tópicos configurados
         self.subscribedTopics: Set[str] = set()
+        
+        # Signal Control properties
+        self.availableSignals = self.topics.copy()
+        self.activeSignals: Set[str] = set(self.availableSignals)  # Todos ativos por default
         
         # Configurações de socket
         self.lingerTime = self.zmqConfig.lingerTime
@@ -105,6 +113,7 @@ class ZeroMQListener:
             "messagesReceived": 0,
             "messagesProcessed": 0,
             "messagesRejected": 0,
+            "messagesFiltered": 0,  
             "lastMessageTimestamp": None,
             "connectionUptime": 0.0,
             "reconnections": 0,
@@ -114,12 +123,65 @@ class ZeroMQListener:
                 "received": 0,
                 "processed": 0,
                 "rejected": 0,
+                "filtered": 0,
                 "lastMessage": None
             } for topic in self.topics},
             "dataTypeStats": {}
         }
         
-        self.logger.info(f"ZeroMQListener initialized - Publisher: {self.subscriberUrl}, Topics: {self.topics}")
+        # Registar no manager central de Signal Control
+        signalControlManager.registerComponent("listener", self)
+        
+        self.logger.info(f"ZeroMQListener initialized with Signal Control - Publisher: {self.subscriberUrl}, Topics: {self.topics}")
+    
+    # Signal Control Interface Implementation
+    
+    def getAvailableSignals(self) -> List[str]:
+        """Retorna lista de tópicos disponíveis para recepção"""
+        return self.availableSignals.copy()
+    
+    def getActiveSignals(self) -> List[str]:
+        """Retorna lista de tópicos atualmente ativos"""
+        return list(self.activeSignals)
+    
+    async def enableSignal(self, signal: str) -> bool:
+        """Ativa processamento de um tópico específico"""
+        if signal not in self.availableSignals:
+            self.logger.warning(f"Signal Control: Cannot enable unknown signal {signal}")
+            return False
+        
+        self.activeSignals.add(signal)
+        self.logger.info(f"Signal Control: Enabled topic {signal}")
+        return True
+    
+    async def disableSignal(self, signal: str) -> bool:
+        """Desativa processamento de um tópico específico"""
+        self.activeSignals.discard(signal)
+        self.logger.info(f"Signal Control: Disabled topic {signal}")
+        return True
+    
+    def getSignalState(self, signal: str) -> SignalState:
+        """Retorna estado atual de um sinal"""
+        if signal not in self.availableSignals:
+            return SignalState.UNKNOWN
+        
+        if signal in self.activeSignals:
+            return SignalState.ACTIVE
+        else:
+            return SignalState.INACTIVE
+    
+    def getComponentState(self) -> ComponentState:
+        """Retorna estado atual do componente"""
+        if self.state == ListenerState.CONNECTED:
+            return ComponentState.RUNNING
+        elif self.state == ListenerState.STOPPED:
+            return ComponentState.STOPPED
+        elif self.state == ListenerState.ERROR:
+            return ComponentState.ERROR
+        else:
+            return ComponentState.INITIALIZING
+    
+    # Core Listener Methods
     
     def _updateConnectionConfig(self):
         """Atualiza configuração de conexão baseada no modo atual"""
@@ -127,14 +189,13 @@ class ZeroMQListener:
             self.publisherAddress = self.zmqConfig.publisherAddress  # 192.168.1.103
             self.subscriberPort = self.zmqConfig.subscriberPort      # 22881
             self.subscriberUrl = f"tcp://{self.publisherAddress}:{self.subscriberPort}"
-            self.logger.info(f"ZeroMQListner CONFIG: Real mode - {self.subscriberUrl}")
+            self.logger.info(f"ZeroMQListener CONFIG: Real mode - {self.subscriberUrl}")
         elif self.currentMode == WhoToListenState.MOCK: 
             self.publisherAddress = self.mockConfig.mockPublisherAddress  # 127.0.0.1
             self.subscriberPort = self.mockConfig.mockPublisherPort       # 22882
             self.subscriberUrl = self.mockConfig.mockPublisherUrl         # tcp://127.0.0.1:22882
             self.logger.info(f"ZeroMQListener CONFIG: Mock mode - {self.subscriberUrl}")
         else:
-            # Não é suposto a não ser que haja algo novo.
             self.logger.info(f"ZeroMQListener CONFIG: mode desconhecido config mal feita. - {self.subscriberUrl}")
 
     async def start(self):
@@ -293,6 +354,7 @@ class ZeroMQListener:
                         "received": 0,
                         "processed": 0,
                         "rejected": 0,
+                        "filtered": 0,
                         "lastMessage": None
                     }
                 
@@ -373,13 +435,6 @@ class ZeroMQListener:
                 return
             
             topic = multiPartMsg[0].decode('utf-8')
-            #TODO   FILTRO DE DEBUG
-            # TOPICS_TO_SHOW = ["CardioWheel_ACC"]  # Só mostrar ACC
-            #TOPICS_TO_SHOW = ["CardioWheel_GYR"]  # Só mostrar GYR
-            # TOPICS_TO_SHOW = ["CardioWheel_ACC", "CardioWheel_GYR"]  # Ambos
-            
-            #if topic not in TOPICS_TO_SHOW:
-                #return  # Skip este tópico
             rawData = multiPartMsg[1]  # Manter como bytes para o processor
             
             self.logger.debug(f"Received message from topic: {topic}, size: {len(rawData)} bytes")
@@ -431,6 +486,14 @@ class ZeroMQListener:
             rawData: Dados brutos em bytes (msgpack)
         """
         try:
+            # Filtering via Signal Control
+            if topic not in self.activeSignals:
+                self.stats["messagesFiltered"] += 1
+                if topic in self.stats["topicStats"]:
+                    self.stats["topicStats"][topic]["filtered"] += 1
+                self.logger.debug(f"Topic {topic} filtered by Signal Control")
+                return
+            
             self.logger.debug(f"Processing message from topic: {topic}")
             
             # Delegar processamento ao ZeroMQProcessor
@@ -684,7 +747,7 @@ class ZeroMQListener:
     
     def _getTopicHealth(self) -> Dict[str, Any]:
         """
-        Avalia saúde individual de cada tópico.
+        Avalia saúde individual de cada tópico incluindo estatísticas de filtering.
         
         Returns:
             Dicionário com estado de saúde por tópico
@@ -696,36 +759,40 @@ class ZeroMQListener:
             health = "healthy"
             issues = []
             
-            topic_stats = self.stats["topicStats"].get(topic, {})
-            last_message_time = self.lastMessageByTopic.get(topic)
+            topicStats = self.stats["topicStats"].get(topic, {})
+            lastMessageTime = self.lastMessageByTopic.get(topic)
             
             # Verificar se recebeu mensagens
-            if topic_stats.get("received", 0) == 0:
+            if topicStats.get("received", 0) == 0:
                 if self._getUptime() > 10.0:  # Após 10s sem mensagens
                     health = "warning"
                     issues.append("No messages received")
             
             # Verificar timeout específico do tópico
-            elif last_message_time:
-                age = (now - last_message_time).total_seconds()
+            elif lastMessageTime:
+                age = (now - lastMessageTime).total_seconds()
                 if age > self.messageTimeout * 2:
                     health = "warning"
                     issues.append(f"No messages for {age:.1f}s")
             
             # Verificar taxa de rejeição
-            received = topic_stats.get("received", 0)
-            rejected = topic_stats.get("rejected", 0)
+            received = topicStats.get("received", 0)
+            rejected = topicStats.get("rejected", 0)
             if received > 0:
                 rejection_rate = rejected / received
                 if rejection_rate > 0.3:  # >30% rejeição
                     health = "warning"
                     issues.append(f"High rejection rate: {rejection_rate:.1%}")
             
+            # Verificar se tópico está sendo filtrado pelo Signal Control
+            signal_state = "active" if topic in self.activeSignals else "filtered"
+            
             topicHealth[topic] = {
                 "health": health,
                 "issues": issues,
-                "stats": topic_stats,
-                "lastMessageAge": (now - last_message_time).total_seconds() if last_message_time else None
+                "stats": topicStats,
+                "signalState": signal_state,
+                "lastMessageAge": (now - lastMessageTime).total_seconds() if lastMessageTime else None
             }
         
         return topicHealth
@@ -789,8 +856,8 @@ class ZeroMQListener:
         """
         Retorna estado completo do listener para monitorização.
         
-        Inclui estado da conexão, estatísticas por tópico, configurações
-        e métricas de saúde para debug e monitorização externa.
+        Inclui estado da conexão, estatísticas por tópico, configurações,
+        métricas de saúde e informações de Signal Control para debug e monitorização externa.
         
         Returns:
             Dicionário com estado completo do sistema
@@ -809,6 +876,12 @@ class ZeroMQListener:
             "topicHealth": self._getTopicHealth(),
             "health": self.getConnectionHealth(),
             "processorStats": zeroMQProcessor.getProcessingStats(),
+            "signalControl": {
+                "availableSignals": self.getAvailableSignals(),
+                "activeSignals": self.getActiveSignals(),
+                "componentState": self.getComponentState().value,
+                "filteredTopics": [topic for topic in self.availableSignals if topic not in self.activeSignals]
+            },
             "config": {
                 "publisherAddress": self.publisherAddress,
                 "subscriberPort": self.subscriberPort,
@@ -824,8 +897,8 @@ class ZeroMQListener:
         """
         Avalia saúde da conexão baseada em métricas e thresholds.
         
-        Analisa estado da conexão, taxa de erros, tempo sem mensagens por tópico
-        e outros indicadores para determinar se sistema está saudável.
+        Analisa estado da conexão, taxa de erros, tempo sem mensagens por tópico,
+        estatísticas de filtering e outros indicadores para determinar se sistema está saudável.
         
         Returns:
             Dicionário com avaliação de saúde e métricas
@@ -887,6 +960,14 @@ class ZeroMQListener:
                 health = "warning" if health == "healthy" else health
                 warnings.append(f"High rejection rate: {rejectionRate:.1%}")
         
+        # Verificar se muitos tópicos estão sendo filtrados
+        if len(self.activeSignals) == 0:
+            health = "warning" if health == "healthy" else health
+            warnings.append("All topics filtered by Signal Control")
+        elif len(self.activeSignals) < len(self.availableSignals) / 2:
+            filteredCount = len(self.availableSignals) - len(self.activeSignals)
+            warnings.append(f"{filteredCount} topics filtered by Signal Control")
+        
         return {
             "health": health,
             "issues": issues,
@@ -896,8 +977,11 @@ class ZeroMQListener:
                 "errorRate": self.stats["errors"] / max(1, self.stats["messagesReceived"]),
                 "rejectionRate": self.stats["messagesRejected"] / max(1, self.stats["messagesReceived"]),
                 "processingRate": self.stats["messagesProcessed"] / max(1, self.stats["messagesReceived"]),
+                "filteringRate": self.stats["messagesFiltered"] / max(1, self.stats["messagesReceived"]),
                 "topicsHealthy": len([t for t in topicHealth.values() if t["health"] == "healthy"]),
-                "totalTopics": len(self.subscribedTopics)
+                "totalTopics": len(self.subscribedTopics),
+                "activeTopics": len(self.activeSignals),
+                "filteredTopics": len(self.availableSignals) - len(self.activeSignals)
             },
             "topicDetails": topicHealth
         }
@@ -916,11 +1000,17 @@ class ZeroMQListener:
             self.socket.setsockopt_string(zmq.SUBSCRIBE, topic)
             self.subscribedTopics.add(topic)
             
+            # Adicionar aos sinais disponíveis se não existir
+            if topic not in self.availableSignals:
+                self.availableSignals.append(topic)
+                self.activeSignals.add(topic)  # Ativo por default
+            
             # Inicializar stats para o novo tópico
             self.stats["topicStats"][topic] = {
                 "received": 0,
                 "processed": 0,
                 "rejected": 0,
+                "filtered": 0,
                 "lastMessage": None
             }
             
@@ -951,6 +1041,9 @@ class ZeroMQListener:
         try:
             self.socket.setsockopt_string(zmq.UNSUBSCRIBE, topic)
             self.subscribedTopics.remove(topic)
+            
+            # Remover dos sinais ativos se existir
+            self.activeSignals.discard(topic)
             
             # Manter stats para histórico
             if topic in self.lastMessageByTopic:

@@ -146,5 +146,94 @@ class EventManager:
         self._listeners.clear()
         self._logger.info("All event listeners cleared")
 
+# ================================
+# SIGNAL CONTROL EVENT TYPES
+# ================================
+
+class SignalControlEvents:
+    """Constantes para eventos de controlo de sinais"""
+    
+    # Eventos de sinal individual
+    SIGNAL_ENABLED = "signal.enabled"
+    SIGNAL_DISABLED = "signal.disabled"
+    SIGNAL_FILTERED = "signal.filtered"
+    
+    # Eventos por componente
+    COMPONENT_SIGNAL_ACTIVATED = "component.signal_activated"
+    COMPONENT_SIGNAL_DEACTIVATED = "component.signal_deactivated"
+    COMPONENT_STATE_CHANGED = "component.state_changed"
+    
+    # Eventos de operações em lote
+    BATCH_OPERATION_STARTED = "control.batch_operation_started"
+    BATCH_OPERATION_COMPLETED = "control.batch_operation_completed"
+    BATCH_OPERATION_FAILED = "control.batch_operation_failed"
+    
+    # Eventos de controlo global
+    ALL_SIGNALS_ENABLED = "control.all_signals_enabled"
+    ALL_SIGNALS_DISABLED = "control.all_signals_disabled"
+    SYSTEM_STATE_RESET = "control.system_state_reset"
+    
+    # Eventos de estado e configuração
+    STATE_SAVED = "control.state_saved"
+    STATE_LOADED = "control.state_loaded"
+    PRESET_APPLIED = "control.preset_applied"
+    
+    # Eventos de erro e aviso
+    CONTROL_OPERATION_FAILED = "control.operation_failed"
+    INVALID_SIGNAL_REQUEST = "control.invalid_signal_request"
+    COMPONENT_NOT_RESPONSIVE = "control.component_not_responsive"
+
+class SignalControlEventData:
+    """Estruturas padrão para dados de eventos de controlo"""
+    
+    @staticmethod
+    def signalStateChange(signal: str, component: str, enabled: bool, timestamp: str = None) -> Dict[str, Any]:
+        """Dados para eventos de mudança de estado de sinal"""
+        return {
+            "signal": signal,
+            "component": component,
+            "enabled": enabled,
+            "timestamp": timestamp or datetime.now().isoformat(),
+            "previousState": not enabled  # Assumindo toggle
+        }
+    
+    @staticmethod
+    def batchOperation(operationType: str, operations: List[Dict], success: bool, 
+                      timestamp: str = None, error: str = None) -> Dict[str, Any]:
+        """Dados para eventos de operações em lote"""
+        return {
+            "operationType": operationType,  # "enable_all", "disable_all", "custom_batch"
+            "operationCount": len(operations),
+            "operations": operations,
+            "success": success,
+            "error": error,
+            "timestamp": timestamp or datetime.now().isoformat(),
+            "duration": None  # Será preenchido pelo caller
+        }
+    
+    @staticmethod
+    def componentStateChange(component: str, activeSignals: List[str], 
+                           totalSignals: int, timestamp: str = None) -> Dict[str, Any]:
+        """Dados para eventos de mudança de estado de componente"""
+        return {
+            "component": component,
+            "activeSignals": activeSignals,
+            "activeCount": len(activeSignals),
+            "totalSignals": totalSignals,
+            "timestamp": timestamp or datetime.now().isoformat()
+        }
+    
+    @staticmethod
+    def operationError(operation: str, error: str, signal: str = None, 
+                      component: str = None, timestamp: str = None) -> Dict[str, Any]:
+        """Dados para eventos de erro em operações"""
+        return {
+            "operation": operation,
+            "error": error,
+            "signal": signal,
+            "component": component,
+            "timestamp": timestamp or datetime.now().isoformat()
+        }
+
 # Instância global
 eventManager = EventManager()

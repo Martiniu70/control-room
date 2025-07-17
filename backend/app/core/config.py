@@ -16,6 +16,7 @@ http://localhost:8000/api/status - Status do sistema
 ws://localhost:8000/ws - WebSocket para os dados em tempo real
 """
 
+import logging
 import os
 from typing import Dict, List
 
@@ -142,7 +143,7 @@ class ZeroMQConfig:
                 "dataFormat": "msgpack"
             },
             "Cfg": {
-                "expectedFrequency": 0.05,          # Configurações raras - TODO averiguar utilidade
+                "expectedFrequency": 0.05,          # Configurações - TODO averiguar utilidade
                 "dataFormat": "msgpack"
             }
         }
@@ -724,6 +725,79 @@ class SignalConfig:
             }
         }
 
+class SignalControlConfig:
+    """Configurações do sistema de controlo de sinais"""
+    def __init__(self):
+
+        # Cada tópico ZeroMQ mapeia diretamente para um signal type
+        self.topicToSignalTypeMapping = {
+            "Polar_PPI": "hr",                    # HR/PPI do Polar
+            "CardioWheel_ECG": "ecg",             # ECG do CardioWheel
+            "CardioWheel_ACC": "accelerometer",   # Acelerómetro do CardioWheel
+            "CardioWheel_GYR": "gyroscope",       # Giroscópio do CardioWheel
+            "BrainAcess_EEG": "eegRaw"            # EEG raw do BrainAccess
+        }
+
+        # Listas derivadas do mapeamento
+        self.zeroMQTopics = list(self.topicToSignalTypeMapping.keys())
+        self.signalTypes = list(self.topicToSignalTypeMapping.values())
+
+        self.componentSignalMappings = {
+            # Componentes que trabalham com tópicos ZeroMQ
+            "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
+            "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
+            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"] ← CORRIGIDO!
+            
+            # Componentes que trabalham com signal types
+            "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+            "websocket": self.signalTypes.copy()     # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+        }
+        
+        self.defaultActiveStates = {
+            # Componentes ZeroMQ - todos os tópicos ativos
+            "publisher": {topic: True for topic in self.zeroMQTopics},
+            "listener": {topic: True for topic in self.zeroMQTopics},
+            "processor": {topic: True for topic in self.zeroMQTopics},    
+            
+            # Componentes signal types - todos os signal types ativos
+            "manager": {signal: True for signal in self.signalTypes},
+            "websocket": {signal: False for signal in self.signalTypes} # IMPORTANTE, COMEÇAM TODOS DESATIVOS
+        }
+        
+        # Timeouts e configurações de operação
+        self.operationTimeout = 5.0                     # Segundos para operações de controlo
+        self.batchOperationTimeout = 15.0               # Segundos para operações em lote
+        self.stateChangeDelay = 0.1                     # Segundos entre mudanças de estado
+        
+        # Configurações de logging específicas
+        self.logControlOperations = True                # Log de enable/disable
+        self.logFilteredMessages = False                # Log de mensagens filtradas (verbose)
+        self.logBatchOperations = True                  # Log de operações em lote
+        
+        # Validação e segurança
+        self.allowEmptyActiveSignals = False            # Permitir desativar todos os sinais
+        self.confirmCriticalOperations = True           # Confirmação para operações críticas
+        self.maxBatchOperations = 50                    # Máximo de operações numa operação em lote
+        
+        # Persistência de estado
+        self.persistState = True                            # Guardar estado entre reinícios
+        self.stateFilePath = "signal_control_state.json"    # Ficheiro para guardar estado
+        self.autoSaveInterval = 30.0                        # Segundos entre auto-saves
+        
+        # Componentes disponíveis para controlo
+        self.availableComponents = ["publisher", "listener", "processor", "manager", "websocket"]
+        
+        
+        # Log configuração se debug ativo
+        if os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes'):
+            print(f"Signal Control Config:")
+            print(f"  Available components: {len(self.availableComponents)}")
+            print(f"  ZeroMQ Topics: {self.zeroMQTopics}")
+            print(f"  Signal Types: {self.signalTypes}")
+            print(f"  Mapping: {self.topicToSignalTypeMapping}")
+            print(f"  Default state: All signals active")
+            print(f"  Persist state: {self.persistState}")
+
 class Settings:
     """Configurações principais"""
     
@@ -750,6 +824,7 @@ class Settings:
         self.websocket = WebSocketConfig()
         self.signals = SignalConfig()
         self.mockZeromq = MockZeroMQConfig()
+        self.signalControl = SignalControlConfig()
         
         # Carregar .env se existir
         self._loadEnvFile()
@@ -771,6 +846,8 @@ class Settings:
             except Exception as e:
                 print(f"Couldn't load .env file: {e}")
 
+
+
 # Instância global
 settings = Settings()
 
@@ -785,3 +862,15 @@ if settings.debugMode:
     #print(f"EEG channels: {settings.signals.eegConfig['raw']['channels']}, Range: {settings.signals.eegConfig['raw']['normalRange']}")
     print(f"Mock ZeroMQ Publisher: {settings.mockZeromq.mockPublisherUrl}")
     print(f"Mock frequencies: ECG={settings.mockZeromq.topicFrequencies['CardioWheel_ECG']}Hz")
+
+
+
+# Configurar logging específico para controlo de sinais se debug ativo
+if settings.debugMode and hasattr(settings, 'signalControl'):
+    signalControlLogger = logging.getLogger('signalControl')
+    if settings.signalControl.logControlOperations:
+        signalControlLogger.setLevel(logging.INFO)
+        print(f"Signal Control logging: Enabled")
+    else:
+        signalControlLogger.setLevel(logging.WARNING)
+        print(f"Signal Control logging: Minimal")

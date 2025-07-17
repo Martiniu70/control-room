@@ -22,6 +22,7 @@ from app.ws.webSocketRouter import router as websocket_router
 from app.ws.webSocketManager import websocketManager
 from app.services.signalManager import signalManager
 from app.services.zeroMQListener import zeroMQListener
+from app.ws.signalControlRouter import router as signal_control_router
 
 # Configurar logging
 logging.basicConfig(
@@ -96,6 +97,7 @@ app.add_middleware(
 
 # Incluir routers WebSocket
 app.include_router(websocket_router, prefix="/api", tags=["websocket"])
+app.include_router(signal_control_router)
 
 # Endpoints REST básicos
 @app.get("/")
@@ -334,53 +336,6 @@ async def inject_topic_anomaly(topic: str, anomaly_type: str, duration: float = 
             content={"error": str(e)}
         )
 
-@app.post("/api/mock/topics/{topic}/enable")
-async def enable_topic(topic: str):
-    """Ativa tópico específico"""
-    if settings.useRealSensors:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
-        )
-    
-    try:
-        from tests.mockZeroMQ import mockZeroMQController
-        mockZeroMQController.enableTopic(topic)
-        return {
-            "topic": topic,
-            "status": "enabled",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error enabling topic {topic}: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
-
-@app.post("/api/mock/topics/{topic}/disable")
-async def disable_topic(topic: str):
-    """Desativa tópico específico"""
-    if settings.useRealSensors:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Mock system not active when USE_REAL_SENSORS=True"}
-        )
-    
-    try:
-        from tests.mockZeroMQ import mockZeroMQController
-        mockZeroMQController.disableTopic(topic)
-        return {
-            "topic": topic,
-            "status": "disabled",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error disabling topic {topic}: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
 
 if __name__ == "__main__":
     import uvicorn

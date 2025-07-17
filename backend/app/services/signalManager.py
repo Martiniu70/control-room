@@ -6,10 +6,12 @@ Coordena todos os tipos de sinais (CardiacSignal, EEGSignal, SensorsSignal) e pr
 vindos de diferentes fontes (ZeroMQ, DataStreamer). Funciona como um "manager"
 que recebe dados brutos, os distribui pelos sinais corretos, e emite eventos 
 quando processados. Inclui validação, gestão de erros, e avaliação da saúde geral do sistema.
+Inclui controlo granular de sinais através do sistema Signal Control para filtering
+por signal types individuais.
 """
 
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from datetime import datetime
 
 from ..models.signals.cardiacSignal import CardiacSignal
@@ -17,9 +19,10 @@ from ..models.signals.eegSignal import EEGSignal
 from ..models.signals.sensorSignal import SensorsSignal
 from ..models.base import SignalPoint
 from ..core import eventManager, settings
+from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
 
-class SignalManager:
-    """Manager central para coordenar sinais"""
+class SignalManager(SignalControlInterface):
+    """Manager central para coordenar sinais com controlo de sinais"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -38,6 +41,10 @@ class SignalManager:
             "sensors": ["accelerometer", "gyroscope"]
         }
         
+        # Signal Control properties
+        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+        self.activeSignals: Set[str] = set(self.availableSignals)  # Todos ativos por default
+        
         # Mapeamento de métodos específicos de status por sinal
         self.statusMethods = {
             "cardiac": "getCardiacStatus",
@@ -48,18 +55,65 @@ class SignalManager:
         # Estatísticas do manager
         self.stats = {
             "totalDataProcessed": 0,
+            "totalFiltered": 0,
             "dataProcessedBySignal": {signal: 0 for signal in self.signals.keys()},
+            "dataFilteredBySignal": {signal: 0 for signal in self.signals.keys()},
             "totalErrors": 0,
             "lastProcessedTime": None,
             "startTime": datetime.now().isoformat()
         }
         
-        self.logger.info(f"SignalManager initialized with signals: {list(self.signals.keys())}")
+        # Registar no manager central de Signal Control
+        signalControlManager.registerComponent("manager", self)
+        
+        self.logger.info(f"SignalManager initialized with Signal Control - signals: {list(self.signals.keys())}")
+    
+    # Signal Control Interface Implementation
+    
+    def getAvailableSignals(self) -> List[str]:
+        """Retorna lista de signal types disponíveis para processamento"""
+        return self.availableSignals.copy()
+    
+    def getActiveSignals(self) -> List[str]:
+        """Retorna lista de signal types atualmente ativos"""
+        return list(self.activeSignals)
+    
+    async def enableSignal(self, signal: str) -> bool:
+        """Ativa processamento de um signal type específico"""
+        if signal not in self.availableSignals:
+            self.logger.warning(f"Signal Control: Cannot enable unknown signal {signal}")
+            return False
+        
+        self.activeSignals.add(signal)
+        self.logger.info(f"Signal Control: Enabled signal type {signal}")
+        return True
+    
+    async def disableSignal(self, signal: str) -> bool:
+        """Desativa processamento de um signal type específico"""
+        self.activeSignals.discard(signal)
+        self.logger.info(f"Signal Control: Disabled signal type {signal}")
+        return True
+    
+    def getSignalState(self, signal: str) -> SignalState:
+        """Retorna estado atual de um signal type"""
+        if signal not in self.availableSignals:
+            return SignalState.UNKNOWN
+        
+        if signal in self.activeSignals:
+            return SignalState.ACTIVE
+        else:
+            return SignalState.INACTIVE
+    
+    def getComponentState(self) -> ComponentState:
+        """Retorna estado atual do componente"""
+        return ComponentState.RUNNING  # SignalManager é sempre considerado running se inicializado
+    
+    # Core Manager Methods
     
     async def addSignalData(self, signalType: str, dataType: str, value: Any, 
                            timestamp: Optional[float] = None) -> bool:
         """
-        Adiciona dados a um sinal específico
+        Adiciona dados a um sinal específico com filtering por Signal Control
         
         Args:
             signalType: "cardiac", "eeg", "sensors"
@@ -79,6 +133,13 @@ class SignalManager:
             self.logger.warning(f"Invalid data type {dataType} for signal {signalType}. Valid types: {self.dataTypeMappings.get(signalType, [])}")
             self.stats["totalErrors"] += 1
             return False
+        
+        # Filtering via Signal Control por signal type individual
+        if dataType not in self.activeSignals:
+            self.stats["totalFiltered"] += 1
+            self.stats["dataFilteredBySignal"][signalType] += 1
+            self.logger.debug(f"Signal Control: Signal type {dataType} filtered")
+            return True  # Retorna True mas não processa (filtering silencioso)
         
         try:
             # Criar SignalPoint
@@ -134,7 +195,7 @@ class SignalManager:
     
     async def processZeroMQData(self, rawData: Dict[str, Any]) -> bool:
         """
-        Processa dados vindos do ZeroMQ
+        Processa dados vindos do ZeroMQ com filtering por Signal Control
         
         Formato esperado:
         {
@@ -223,9 +284,7 @@ class SignalManager:
             
             # Verificar se processamos alguma coisa
             if processedCount > 0:
-                """
-                self.logger.info(f"Successfully processed {processedCount} signal types from {source}")
-                """
+                self.logger.debug(f"Successfully processed {processedCount} signal types from {source}")
             else:
                 self.logger.warning(f"No recognizable data types in message from {source}. Available keys: {list(data.keys())}")
                 overallSuccess = False
@@ -244,7 +303,7 @@ class SignalManager:
             return False
     
     async def _processCardiacData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
-        """Processa dados cardíacos específicos com validação"""
+        """Processa dados cardíacos específicos com validação e filtering"""
         success = True
         
         # Processar ECG se presente
@@ -282,7 +341,7 @@ class SignalManager:
         return success
     
     async def _processEegData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
-        """Processa dados EEG específicos com validação"""
+        """Processa dados EEG específicos com validação e filtering"""
         success = True
         
         # Processar EEG Raw se presente
@@ -320,7 +379,7 @@ class SignalManager:
         return success
     
     async def _processSensorsData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
-        """Processa dados de sensores específicos com validação"""
+        """Processa dados de sensores específicos com validação e filtering"""
         success = True
         
         # Processar Accelerometer se presente
@@ -478,6 +537,13 @@ class SignalManager:
                 health = "warning" if health == "healthy" else health
                 warnings.append(f"High anomaly count: {totalAnomalies}")
             
+            # Verificar filtering excessivo
+            if self.stats["totalFiltered"] > 0:
+                filterRate = self.stats["totalFiltered"] / max(1, self.stats["totalDataProcessed"] + self.stats["totalFiltered"])
+                if filterRate > 0.5:  # >50% filtrado
+                    health = "warning" if health == "healthy" else health
+                    warnings.append(f"High filter rate: {filterRate:.1%}")
+            
             # Calcular uptime
             startTime = datetime.fromisoformat(self.stats["startTime"])
             uptime = (datetime.now() - startTime).total_seconds()
@@ -491,6 +557,7 @@ class SignalManager:
                     "totalSignals": len(self.signals),
                     "totalAnomalies": totalAnomalies,
                     "errorRate": errorRate,
+                    "filterRate": self.stats["totalFiltered"] / max(1, self.stats["totalDataProcessed"] + self.stats["totalFiltered"]),
                     "uptime": uptime
                 },
                 "stats": self.stats.copy(),
@@ -627,7 +694,7 @@ class SignalManager:
         }
     
     def _classifyAnomalySeverity(self, anomalyMessage: str) -> str:
-        """Classifica severidade de anomalia - melhorada"""
+        """Classifica severidade de anomalia"""
         message = anomalyMessage.lower()
         
         # Crítico
@@ -650,8 +717,35 @@ class SignalManager:
         else:
             return "info"
     
+    def getControlSummary(self) -> Dict[str, Any]:
+        """
+        Retorna resumo do estado de controlo do componente.
+        
+        Returns:
+            Resumo com estatísticas e estado atual
+        """
+        available = self.getAvailableSignals()
+        active = self.getActiveSignals()
+        
+        return {
+            "componentState": self.getComponentState().value,
+            "totalSignals": len(available),
+            "activeSignals": len(active),
+            "inactiveSignals": len(available) - len(active),
+            "availableSignals": available,
+            "activeSignalsList": active,
+            "inactiveSignalsList": [s for s in available if s not in active],
+            "filtering": {
+                "totalFiltered": self.stats["totalFiltered"],
+                "filteringRate": self.stats["totalFiltered"] / max(1, 
+                    self.stats["totalDataProcessed"] + self.stats["totalFiltered"]
+                )
+            },
+            "lastUpdate": datetime.now().isoformat()
+        }
+    
     def getManagerStats(self) -> Dict[str, Any]:
-        """Estatísticas do SignalManager"""
+        """Estatísticas do SignalManager incluindo Signal Control"""
         uptime = (datetime.now() - datetime.fromisoformat(self.stats["startTime"])).total_seconds()
         
         return {
@@ -660,7 +754,14 @@ class SignalManager:
             "availableSignals": list(self.signals.keys()),
             "dataTypeMappings": self.dataTypeMappings,
             "averageProcessingRate": self.stats["totalDataProcessed"] / max(1, uptime),
-            "successRate": 1 - (self.stats["totalErrors"] / max(1, self.stats["totalDataProcessed"]))
+            "successRate": 1 - (self.stats["totalErrors"] / max(1, self.stats["totalDataProcessed"])),
+            "filterRate": self.stats["totalFiltered"] / max(1, self.stats["totalDataProcessed"] + self.stats["totalFiltered"]),
+            "signalControl": {
+                "availableSignals": self.getAvailableSignals(),
+                "activeSignals": self.getActiveSignals(),
+                "componentState": self.getComponentState().value,
+                "filteredSignals": [signal for signal in self.availableSignals if signal not in self.activeSignals]
+            }
         }
     
     def reset(self) -> None:
@@ -672,7 +773,9 @@ class SignalManager:
             # Reset das estatísticas
             self.stats = {
                 "totalDataProcessed": 0,
+                "totalFiltered": 0,
                 "dataProcessedBySignal": {signal: 0 for signal in self.signals.keys()},
+                "dataFilteredBySignal": {signal: 0 for signal in self.signals.keys()},
                 "totalErrors": 0,
                 "lastProcessedTime": None,
                 "startTime": datetime.now().isoformat()

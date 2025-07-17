@@ -6,7 +6,7 @@ Orquestra todo o sistema mock simulando perfeitamente o fluxo real:
 Publishers + Formatters + Geradores funcionando em conjunto para criar
 um stream contínuo de dados que o ZeroMQListener pode consumir como se
 fossem sensores reais. Coordena frequências, timing, anomalias e 
-permite controlo granular de cada tópico.
+permite controlo granular de cada tópico através do sistema Signal Control.
 """
 
 import asyncio
@@ -16,6 +16,7 @@ from typing import Dict, List, Any, Optional, Set
 from enum import Enum
 
 from app.core import settings, eventManager
+from app.core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
 from .zeroMQPublisher import zeroMQPublisher, ZeroMQPublisher
 from .zeroMQFormatter import zeroMQFormatter, ZeroMQFormatter
 from .generators import (
@@ -34,8 +35,8 @@ class ControllerState(Enum):
     STOPPING = "stopping"
     ERROR = "error"
 
-class MockZeroMQController:
-    """Controller principal do sistema mock ZeroMQ"""
+class MockZeroMQController(SignalControlInterface):
+    """Controller principal do sistema mock ZeroMQ com controlo de sinais"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -63,8 +64,11 @@ class MockZeroMQController:
         
         # Configurações de frequência por tópico
         self.topicFrequencies = self.mockConfig.topicFrequencies.copy()
-        self.activeTopics: Set[str] = set()
         self.topicTasks: Dict[str, asyncio.Task] = {}
+        
+        # Signal Control properties
+        self.availableSignals = list(self.topicGenerators.keys())
+        self.activeSignals: Set[str] = set()
         
         # Estatísticas globais
         self.stats = {
@@ -95,7 +99,84 @@ class MockZeroMQController:
         self.globalMessageCounter = 0
         self.lastRateResetTime = 0.0
         
-        self.logger.info(f"MockZeroMQController initialized for {len(self.topicGenerators)} topics")
+        # Registar no manager central de Signal Control
+        signalControlManager.registerComponent("publisher", self)
+        
+        self.logger.info(f"MockZeroMQController initialized for {len(self.topicGenerators)} topics with Signal Control")
+    
+    # Signal Control Interface Implementation
+    
+    def getAvailableSignals(self) -> List[str]:
+        """Retorna lista de tópicos disponíveis para geração"""
+        return self.availableSignals.copy()
+    
+    def getActiveSignals(self) -> List[str]:
+        """Retorna lista de tópicos atualmente ativos"""
+        return list(self.activeSignals)
+    
+    async def enableSignal(self, signal: str) -> bool:
+        """Ativa geração de um tópico específico"""
+        if signal not in self.availableSignals:
+            self.logger.warning(f"Signal Control: Cannot enable unknown signal {signal}")
+            return False
+        
+        if signal in self.activeSignals:
+            return True  # Já ativo
+        
+        self.activeSignals.add(signal)
+        
+        # Se sistema estiver a rodar, iniciar task do tópico
+        if self.state == ControllerState.RUNNING:
+            self.topicTasks[signal] = asyncio.create_task(
+                self._topicGenerationLoop(signal)
+            )
+        
+        self.logger.info(f"Signal Control: Enabled topic {signal}")
+        return True
+    
+    async def disableSignal(self, signal: str) -> bool:
+        """Desativa geração de um tópico específico"""
+        if signal not in self.activeSignals:
+            return True  # Já inativo
+        
+        self.activeSignals.remove(signal)
+        
+        # Parar task se existir
+        if signal in self.topicTasks:
+            task = self.topicTasks[signal]
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            del self.topicTasks[signal]
+        
+        self.logger.info(f"Signal Control: Disabled topic {signal}")
+        return True
+    
+    def getSignalState(self, signal: str) -> SignalState:
+        """Retorna estado atual de um sinal"""
+        if signal not in self.availableSignals:
+            return SignalState.UNKNOWN
+        
+        if signal in self.activeSignals:
+            return SignalState.ACTIVE
+        else:
+            return SignalState.INACTIVE
+    
+    def getComponentState(self) -> ComponentState:
+        """Retorna estado atual do componente"""
+        if self.state == ControllerState.RUNNING:
+            return ComponentState.RUNNING
+        elif self.state == ControllerState.STOPPED:
+            return ComponentState.STOPPED
+        elif self.state == ControllerState.ERROR:
+            return ComponentState.ERROR
+        else:
+            return ComponentState.INITIALIZING
+    
+    # Controller Core Methods
     
     async def start(self, topics: Optional[List[str]] = None):
         """
@@ -116,17 +197,20 @@ class MockZeroMQController:
         try:
             # Determinar tópicos ativos
             if topics is None:
-                self.activeTopics = set(self.topicGenerators.keys())
+                requestedTopics = set(self.topicGenerators.keys())
             else:
-                self.activeTopics = set(topics) & set(self.topicGenerators.keys())
-                if not self.activeTopics:
+                requestedTopics = set(topics) & set(self.topicGenerators.keys())
+                if not requestedTopics:
                     raise ValueError(f"No valid topics in {topics}. Available: {list(self.topicGenerators.keys())}")
+            
+            # Sincronizar com Signal Control (só ativar os que estão disponíveis)
+            self.activeSignals = requestedTopics.copy()
             
             # Iniciar publisher ZeroMQ
             await self.publisher.start()
             
             # Reset geradores
-            for topic in self.activeTopics:
+            for topic in self.activeSignals:
                 generator = self.topicGenerators[topic]
                 generator.reset()
             
@@ -140,11 +224,11 @@ class MockZeroMQController:
             # Emitir evento de início
             await eventManager.emit("mock.controller_started", {
                 "timestamp": datetime.now().isoformat(),
-                "activeTopics": list(self.activeTopics),
-                "frequencies": {topic: self.topicFrequencies[topic] for topic in self.activeTopics}
+                "activeTopics": list(self.activeSignals),
+                "frequencies": {topic: self.topicFrequencies[topic] for topic in self.activeSignals}
             })
             
-            self.logger.info(f"MockZeroMQ system started - Active topics: {list(self.activeTopics)}")
+            self.logger.info(f"MockZeroMQ system started - Active topics: {list(self.activeSignals)}")
             
         except Exception as e:
             self.state = ControllerState.ERROR
@@ -153,9 +237,7 @@ class MockZeroMQController:
             raise
     
     async def stop(self):
-        """
-        Para o sistema mock ZeroMQ completo.
-        """
+        """Para o sistema mock ZeroMQ completo."""
         
         if self.state == ControllerState.STOPPED:
             return
@@ -191,9 +273,7 @@ class MockZeroMQController:
             self.state = ControllerState.ERROR
     
     async def pause(self):
-        """
-        Pausa geração de dados (publisher continua ativo).
-        """
+        """Pausa geração de dados (publisher continua ativo)."""
         
         if self.state != ControllerState.RUNNING:
             return
@@ -201,7 +281,7 @@ class MockZeroMQController:
         self.state = ControllerState.PAUSED
         self.pausedTime = datetime.now()
         
-        # Pausar tasks de tópicos (não cancelar)
+        # Pausar tasks de tópicos (cancelar)
         for task in self.topicTasks.values():
             if not task.done():
                 task.cancel()
@@ -213,9 +293,7 @@ class MockZeroMQController:
         })
     
     async def resume(self):
-        """
-        Retoma geração de dados.
-        """
+        """Retoma geração de dados."""
         
         if self.state != ControllerState.PAUSED:
             return
@@ -238,13 +316,11 @@ class MockZeroMQController:
         })
     
     async def _startTopicTasks(self):
-        """
-        Inicia tasks assíncronas para cada tópico ativo.
-        """
+        """Inicia tasks assíncronas para cada tópico ativo."""
         
         self.topicTasks.clear()
         
-        for topic in self.activeTopics:
+        for topic in self.activeSignals:
             if topic in self.topicGenerators:
                 # Criar task específica para o tópico
                 self.topicTasks[topic] = asyncio.create_task(
@@ -253,9 +329,7 @@ class MockZeroMQController:
                 self.logger.debug(f"Started generation task for topic: {topic}")
     
     async def _stopTopicTasks(self):
-        """
-        Para todas as tasks de geração de tópicos.
-        """
+        """Para todas as tasks de geração de tópicos."""
         
         for topic, task in self.topicTasks.items():
             if not task.done():
@@ -284,6 +358,11 @@ class MockZeroMQController:
         
         try:
             while self.state == ControllerState.RUNNING:
+                # Verificar se tópico ainda está ativo via Signal Control
+                if topic not in self.activeSignals:
+                    self.logger.debug(f"Topic {topic} disabled via Signal Control, stopping generation")
+                    break
+                
                 loopStartTime = asyncio.get_event_loop().time()
                 
                 # Verificar rate limiting global
@@ -404,6 +483,8 @@ class MockZeroMQController:
             "stats": self.stats.copy()
         })
     
+    # Configuration and Control Methods
+    
     def adjustTopicFrequency(self, topic: str, newFrequency: float):
         """
         Ajusta frequência de um tópico em tempo real.
@@ -457,51 +538,7 @@ class MockZeroMQController:
         else:
             raise ValueError(f"Topic {topic} doesn't support forced anomalies")
     
-    def enableTopic(self, topic: str):
-        """
-        Ativa tópico dinamicamente.
-        
-        Args:
-            topic: Nome do tópico para ativar
-        """
-        
-        if topic not in self.topicGenerators:
-            raise ValueError(f"Unknown topic: {topic}")
-        
-        if topic in self.activeTopics:
-            return  # Já ativo
-        
-        self.activeTopics.add(topic)
-        
-        # Iniciar task se sistema estiver rodando
-        if self.state == ControllerState.RUNNING:
-            self.topicTasks[topic] = asyncio.create_task(
-                self._topicGenerationLoop(topic)
-            )
-        
-        self.logger.info(f"Enabled topic: {topic}")
-    
-    def disableTopic(self, topic: str):
-        """
-        Desativa tópico dinamicamente.
-        
-        Args:
-            topic: Nome do tópico para desativar
-        """
-        
-        if topic not in self.activeTopics:
-            return  # Já inativo
-        
-        self.activeTopics.remove(topic)
-        
-        # Parar task se existir
-        if topic in self.topicTasks:
-            task = self.topicTasks[topic]
-            if not task.done():
-                task.cancel()
-            del self.topicTasks[topic]
-        
-        self.logger.info(f"Disabled topic: {topic}")
+    # Status and Information Methods
     
     def getStatus(self) -> Dict[str, Any]:
         """
@@ -528,13 +565,18 @@ class MockZeroMQController:
             "state": self.state.value,
             "uptime": uptime,
             "totalPausedTime": self.totalPausedDuration,
-            "activeTopics": list(self.activeTopics),
+            "activeTopics": list(self.activeSignals),
             "availableTopics": list(self.topicGenerators.keys()),
             "stats": self.stats.copy(),
             "frequencies": self.topicFrequencies.copy(),
             "publisher": self.publisher.getStatus(),
             "formatter": self.formatter.getStats(),
             "generators": generatorStatus,
+            "signalControl": {
+                "availableSignals": self.getAvailableSignals(),
+                "activeSignals": self.getActiveSignals(),
+                "componentState": self.getComponentState().value
+            },
             "config": {
                 "maxGlobalRate": self.maxGlobalRate,
                 "anomalyInjection": self.anomalyInjection,
@@ -573,7 +615,7 @@ class MockZeroMQController:
                 warnings.extend(publisherHealth["warnings"])
         
         # Verificar tópicos ativos
-        if len(self.activeTopics) == 0 and self.state == ControllerState.RUNNING:
+        if len(self.activeSignals) == 0 and self.state == ControllerState.RUNNING:
             health = "warning" if health == "healthy" else health
             warnings.append("No active topics")
         
@@ -589,6 +631,8 @@ class MockZeroMQController:
             health = "warning" if health == "healthy" else health
             warnings.append(f"Multiple errors detected: {self.stats['errors']}")
         
+        uptime = self.getUptime()
+        
         return {
             "health": health,
             "issues": issues,
@@ -597,7 +641,7 @@ class MockZeroMQController:
             "metrics": {
                 "rejectionRate": self.stats["messagesRejected"] / max(1, self.stats["messagesGenerated"]),
                 "successRate": self.stats["messagesSent"] / max(1, self.stats["messagesGenerated"]),
-                "activeTopicsCount": len(self.activeTopics),
+                "activeTopicsCount": len(self.activeSignals),
                 "totalTopicsCount": len(self.topicGenerators),
                 "anomaliesPerMinute": self.stats["anomaliesInjected"] / max(1, uptime / 60) if uptime > 0 else 0
             },
@@ -609,9 +653,7 @@ class MockZeroMQController:
         }
     
     def reset(self):
-        """
-        Reset completo do sistema.
-        """
+        """Reset completo do sistema."""
         
         # Reset estatísticas
         self.stats = {
@@ -672,7 +714,7 @@ class MockZeroMQController:
     
     def getActiveTopics(self) -> List[str]:
         """Lista de tópicos atualmente ativos."""
-        return list(self.activeTopics)
+        return list(self.activeSignals)
     
     def getTopicFrequencies(self) -> Dict[str, float]:
         """Frequências atuais de todos os tópicos."""
@@ -700,7 +742,7 @@ class MockZeroMQController:
             "isRunning": self.isRunning(),
             "isPaused": self.isPaused(),
             "summary": {
-                "activeTopics": len(self.activeTopics),
+                "activeTopics": len(self.activeSignals),
                 "totalTopics": len(self.topicGenerators),
                 "messagesPerSecond": self.stats["messagesSent"] / max(1, self.getUptime()),
                 "anomaliesPerMinute": self.stats["anomaliesInjected"] / max(1, self.getUptime() / 60),
