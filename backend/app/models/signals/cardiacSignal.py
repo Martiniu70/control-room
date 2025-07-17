@@ -171,17 +171,17 @@ class CardiacSignal(BaseSignal):
         
         # Amplitude muito baixa (eletrodo solto?)
         amplitude = np.max(latestEcg) - np.min(latestEcg)
-        if amplitude < self.ecgLowAmplitudeThreshold:
-            anomalies.append(f"Amplitude ECG muito baixa: {amplitude:.3f} mV (possível eletrodo solto/ mau contacto)")
+        #if amplitude < self.ecgLowAmplitudeThreshold:
+            #anomalies.append(f"Amplitude ECG muito baixa: {amplitude:.3f} mV (possível eletrodo solto/ mau contacto)")  #TODO Averiguar como tornar realiable, quando está num ponto entre waves dá sempre trigger nisto.
         
         # Amplitude muito alta (saturação?)
-        elif amplitude > self.ecgHighAmplitudeThreshold:
+        if amplitude > self.ecgHighAmplitudeThreshold:
             anomalies.append(f"Amplitude ECG muito alta: {amplitude:.3f} mV (intereferência elétrica/ saturação)")
         
         # Sinal muito plano (sem variação) provavelmente algum problema na leitura
         std = np.std(latestEcg)
-        if std < self.ecgFlatThreshold:
-            anomalies.append(f"Sinal ECG muito plano: std={std:.4f} mV")
+        #if std < self.ecgFlatThreshold:
+            #anomalies.append(f"Sinal ECG muito plano: std={std:.4f} mV") #TODO Averiguar como tornar realiable, quando está num ponto entre waves dá sempre trigger nisto.
         
         # Baseline drift (comparar com pontos anteriores) , às vezes derivado de pior contacto ao longo do tempo devido a suor ou assim
         if len(ecgPoints) >= 3:
