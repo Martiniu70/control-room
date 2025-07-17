@@ -15,10 +15,12 @@ from .cardioWheelEcgGenerator import cardioWheelEcgGenerator, CardioWheelEcgGene
 from .cardioWheelAccGenerator import cardioWheelAccGenerator, CardioWheelAccGenerator  
 from .cardioWheelGyrGenerator import cardioWheelGyrGenerator, CardioWheelGyrGenerator
 from .polarPpiGenerator import polarPpiGenerator, PolarPpiGenerator
+from .brainAccessEegGenerator import brainAccessEegGenerator, BrainAccessEegGenerator
 
 __all__ = [
     "cardioWheelEcgGenerator", "CardioWheelEcgGenerator",
     "cardioWheelAccGenerator", "CardioWheelAccGenerator", 
     "cardioWheelGyrGenerator", "CardioWheelGyrGenerator",
-    "polarPpiGenerator", "PolarPpiGenerator"
+    "polarPpiGenerator", "PolarPpiGenerator",
+    "brainAccessEegGenerator", "BrainAccessEegGenerator"
 ]
