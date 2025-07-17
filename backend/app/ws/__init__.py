@@ -4,6 +4,6 @@ WebSocket package
 
 from .webSocketManager import websocketManager
 from .webSocketRouter import router
-from .dataStreamer import dataStreamer
+from .signalControlRouter import router as signalControlRouter
 
-__all__ = ["websocketManager", "router", "dataStreamer"]
+__all__ = ["websocketManager", "router", "signalControlRouter"]

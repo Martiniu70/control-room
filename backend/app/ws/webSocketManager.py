@@ -6,18 +6,23 @@ Gere todas as conexões WebSocket com browsers/clientes. Recebe dados processado
 através de eventos e envia-os imediatamente para todos os clientes conectados. Mantém lista
 de conexões ativas, atribui IDs únicos a cada cliente, e remove automaticamente conexões
 mortas. Também envia dados de status do sistema, anomalias detectadas, e heartbeat periódico.
+Inclui controlo de sinais através do sistema Signal Control para filtering
+por signal types individuais enviados ao frontend.
 """
 
 import asyncio
 import logging
-from typing import Set, Dict, Any, Optional
+from typing import Set, Dict, Any, Optional, List
 from datetime import datetime
 from fastapi import WebSocket
-from ..services.signalManager import signalManager
-from ..core import eventManager, settings
 
-class WebSocketManager:
-    """Gere conexões WebSocket e broadcasting de dados"""
+from ..services.signalManager import signalManager
+from ..services.zeroMQListener import zeroMQListener
+from ..core import eventManager, settings
+from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
+
+class WebSocketManager(SignalControlInterface):
+    """Gere conexões WebSocket e broadcasting de dados com controlo de sinais"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -34,10 +39,76 @@ class WebSocketManager:
         self.heartbeatTask: Optional[asyncio.Task] = None
         self.heartbeatInterval = 10.0  
         
+        # Signal Control properties
+        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+        self.activeSignals: Set[str] = set()  # Começam todos desativos por default
+        
+        # Estatísticas de WebSocket incluindo filtering
+        self.stats = {
+            "messagesSent": 0,
+            "messagesFiltered": 0,
+            "anomaliesSent": 0,
+            "anomaliesFiltered": 0,
+            "heartbeatsSent": 0,
+            "connectionEvents": 0,
+            "errors": 0,
+            "bySignalType": {signal: {
+                "sent": 0,
+                "filtered": 0,
+                "lastSent": None
+            } for signal in self.availableSignals},
+            "startTime": datetime.now().isoformat()
+        }
+        
         # Subscrever aos eventos do sistema
         self._setupEventSubscriptions()
         
-        self.logger.info(f"WebSocketManager initialized - Max connections: {self.maxConnections}")
+        # Registar no manager central de Signal Control
+        signalControlManager.registerComponent("websocket", self)
+        
+        self.logger.info(f"WebSocketManager initialized with Signal Control - Max connections: {self.maxConnections}")
+    
+    # Signal Control Interface Implementation
+    
+    def getAvailableSignals(self) -> List[str]:
+        """Retorna lista de signal types disponíveis para broadcasting"""
+        return self.availableSignals.copy()
+    
+    def getActiveSignals(self) -> List[str]:
+        """Retorna lista de signal types atualmente ativos"""
+        return list(self.activeSignals)
+    
+    async def enableSignal(self, signal: str) -> bool:
+        """Ativa broadcasting de um signal type específico"""
+        if signal not in self.availableSignals:
+            self.logger.warning(f"Signal Control: Cannot enable unknown signal {signal}")
+            return False
+        
+        self.activeSignals.add(signal)
+        self.logger.info(f"Signal Control: Enabled signal type {signal}")
+        return True
+    
+    async def disableSignal(self, signal: str) -> bool:
+        """Desativa broadcasting de um signal type específico"""
+        self.activeSignals.discard(signal)
+        self.logger.info(f"Signal Control: Disabled signal type {signal}")
+        return True
+    
+    def getSignalState(self, signal: str) -> SignalState:
+        """Retorna estado atual de um signal type"""
+        if signal not in self.availableSignals:
+            return SignalState.UNKNOWN
+        
+        if signal in self.activeSignals:
+            return SignalState.ACTIVE
+        else:
+            return SignalState.INACTIVE
+    
+    def getComponentState(self) -> ComponentState:
+        """Retorna estado atual do componente"""
+        return ComponentState.RUNNING  # WebSocketManager é sempre considerado running se inicializado
+    
+    # Core WebSocket Methods
     
     def _setupEventSubscriptions(self):
         """Configura subscriptions aos eventos"""
@@ -45,7 +116,7 @@ class WebSocketManager:
         eventManager.subscribe("signal.processed", self.onSignalProcessed)
         eventManager.subscribe("anomaly.detected", self.onAnomalyDetected)
 
-        # Novos eventos ZeroMQ
+        # Eventos ZeroMQ
         eventManager.subscribe("zmq.connected", self.onZmqConnected)
         eventManager.subscribe("zmq.error", self.onZmqError)
         eventManager.subscribe("zmq.warning", self.onZmqWarning)
@@ -77,6 +148,8 @@ class WebSocketManager:
                 "lastActivity": datetime.now()
             }
             
+            self.stats["connectionEvents"] += 1
+            
             self.logger.info(f"Client connected: {clientId} (Total: {len(self.activeConnections)})")
             
             # Enviar mensagem de boas-vindas
@@ -84,7 +157,9 @@ class WebSocketManager:
                 "type": "connection.established",
                 "clientId": clientId,
                 "serverTime": datetime.now().isoformat(),
-                "availableSignals": self.getActiveSignals(),
+              
+                "availableSignals": self.availableSignals,
+                "activeSignals": self.getActiveSignals(),
                 "updateInterval": self.updateInterval
             })
             
@@ -103,6 +178,7 @@ class WebSocketManager:
             
         except Exception as e:
             self.logger.error(f"Error connecting client: {e}")
+            self.stats["errors"] += 1
             raise
     
     async def disconnect(self, websocket: WebSocket, reason: str = "normal_close"):
@@ -116,6 +192,8 @@ class WebSocketManager:
                 # Remover da lista
                 self.activeConnections.remove(websocket)
                 del self.connectionData[websocket]
+                
+                self.stats["connectionEvents"] += 1
                 
                 self.logger.info(f"Client disconnected: {clientId} - {reason} (Remaining: {len(self.activeConnections)})")
                 
@@ -133,6 +211,7 @@ class WebSocketManager:
                 
         except Exception as e:
             self.logger.error(f"Error disconnecting client: {e}")
+            self.stats["errors"] += 1
 
     async def _startHeartbeat(self):
         """Inicia heartbeat autónomo"""
@@ -165,6 +244,7 @@ class WebSocketManager:
                 
             except Exception as e:
                 self.logger.error(f"Error in heartbeat loop: {e}")
+                self.stats["errors"] += 1
                 await asyncio.sleep(self.heartbeatInterval)
             
     async def sendSystemHeartbeat(self):
@@ -177,19 +257,9 @@ class WebSocketManager:
             # Detectar fonte de dados dinamicamente
             dataSource = "real_sensors" if settings.useRealSensors else "mock_data"
             
-            # Status específico por fonte
-            if settings.useRealSensors:
-                # Dados reais - usar ZeroMQListener
-                from ..services.zeroMQListener import zeroMQListener
-                sourceStatus = zeroMQListener.getStatus()
-                sourceUptime = zeroMQListener._getUptime()
-                sourceCounters = sourceStatus["stats"]
-            else:
-                # Dados mock - usar DataStreamer
-                from .dataStreamer import dataStreamer
-                sourceStatus = dataStreamer.getStatus()
-                sourceUptime = sourceStatus["uptime"]
-                sourceCounters = sourceStatus["counters"]
+            sourceStatus = zeroMQListener.getStatus()
+            sourceUptime = zeroMQListener._getUptime()
+            sourceCounters = sourceStatus["stats"]
             
             # Status geral do sistema
             message = {
@@ -211,24 +281,42 @@ class WebSocketManager:
                 "activeConnections": len(self.activeConnections),
                 "maxConnections": self.maxConnections,
                 
+                # Signal Control info
+                "websocketSignalControl": {
+                    "availableSignals": self.getAvailableSignals(),
+                    "activeSignals": self.getActiveSignals(),
+                    "filteringStats": self.stats["messagesFiltered"]
+                },
+                
                 # Server info
                 "debugMode": settings.debugMode
             }
             
             await self.broadcast(message)
+            self.stats["heartbeatsSent"] += 1
             
         except Exception as e:
             self.logger.error(f"Error sending system heartbeat: {e}")
+            self.stats["errors"] += 1
     
     async def onSignalProcessed(self, event):
-        """Reage a dados de sinais processados"""
+        """Reage a dados de sinais processados com filtering por Signal Control"""
         data = event.data
+        dataType = data.get("dataType")
+        
+        # Filtering via Signal Control por signal type
+        if dataType not in self.activeSignals:
+            self.stats["messagesFiltered"] += 1
+            if dataType in self.stats["bySignalType"]:
+                self.stats["bySignalType"][dataType]["filtered"] += 1
+            self.logger.debug(f"Signal Control: Signal type {dataType} filtered from WebSocket")
+            return
         
         # Criar mensagem para frontend
         message = {
             "type": "signal.update",
             "signalType": data["signalType"],
-            "dataType": data["dataType"],
+            "dataType": dataType,
             "timestamp": data["timestamp"],
             "value": data["value"],
             "anomalies": data.get("anomalies", [])
@@ -237,15 +325,46 @@ class WebSocketManager:
         # Enviar para todos os clientes
         await self.broadcast(message)
         
-        self.logger.debug(f"Broadcasted signal update: {data['signalType']}.{data['dataType']}")
+        # Atualizar estatísticas
+        self.stats["messagesSent"] += 1
+        if dataType in self.stats["bySignalType"]:
+            self.stats["bySignalType"][dataType]["sent"] += 1
+            self.stats["bySignalType"][dataType]["lastSent"] = datetime.now().isoformat()
+        
+        self.logger.debug(f"Broadcasted signal update: {data['signalType']}.{dataType}")
     
     async def onAnomalyDetected(self, event):
-        """Reage a anomalias detectadas"""
+        """Reage a anomalias detectadas com filtering por Signal Control"""
         data = event.data
+        signalType = data.get("signalType")
+        
+        # Determinar dataType baseado no signalType para filtering
+        dataType = None
+        if signalType == "cardiac":
+            # Pode ser hr ou ecg - assumir baseado na anomalia
+            anomalyType = data.get("anomalyType", "")
+            if "bradycardia" in anomalyType or "tachycardia" in anomalyType:
+                dataType = "hr"
+            else:
+                dataType = "ecg"
+        elif signalType == "eeg":
+            dataType = "eegRaw"
+        elif signalType == "sensors":
+            anomalyType = data.get("anomalyType", "")
+            if "rotation" in anomalyType or "spin" in anomalyType:
+                dataType = "gyroscope"
+            else:
+                dataType = "accelerometer"
+        
+        # Filtering via Signal Control
+        if dataType and dataType not in self.activeSignals:
+            self.stats["anomaliesFiltered"] += 1
+            self.logger.debug(f"Signal Control: Anomaly for {dataType} filtered from WebSocket")
+            return
         
         message = {
             "type": "anomaly.alert",
-            "signalType": data["signalType"],
+            "signalType": signalType,
             "anomalyType": data["anomalyType"],
             "severity": data["severity"],
             "message": data["message"],
@@ -255,8 +374,9 @@ class WebSocketManager:
         }
         
         await self.broadcast(message)
+        self.stats["anomaliesSent"] += 1
         
-        self.logger.warning(f"Broadcasted anomaly alert: {data['signalType']} - {data['message']}")
+        self.logger.warning(f"Broadcasted anomaly alert: {signalType} - {data['message']}")
 
     async def onZmqConnected(self, event):
         """ZeroMQ conectou"""
@@ -326,19 +446,12 @@ class WebSocketManager:
                 
         except Exception as e:
             self.logger.warning(f"Failed to send message to client: {e}")
+            self.stats["errors"] += 1
             if deadConnections is not None:
                 deadConnections.append(websocket)
     
-    
-    def _getUptime(self) -> float:
-        """Calcula uptime do sistema em segundos"""
-        #TODO 
-        return 0.0
-    
     async def sendSignalStatus(self, signalType: str):
         """Envia status detalhado de um sinal específico"""
-        from ..services.signalManager import signalManager
-        
         try:
             status = signalManager.getSignalStatus(signalType)
             
@@ -354,13 +467,25 @@ class WebSocketManager:
             
         except Exception as e:
             self.logger.error(f"Error sending signal status for {signalType}: {e}")
+            self.stats["errors"] += 1
     
     def getConnectionStats(self) -> Dict[str, Any]:
-        """Retorna estatísticas das conexões"""
+        """Retorna estatísticas das conexões incluindo Signal Control"""
         return {
             "activeConnections": len(self.activeConnections),
             "maxConnections": self.maxConnections,
             "totalConnectionsEver": self.connectionCounter,
+            "signalControl": {
+                "availableSignals": self.getAvailableSignals(),
+                "activeSignals": self.getActiveSignals(),
+                "componentState": self.getComponentState().value,
+                "filteredSignals": [signal for signal in self.availableSignals if signal not in self.activeSignals]
+            },
+            "filtering": {
+                "messagesFiltered": self.stats["messagesFiltered"],
+                "anomaliesFiltered": self.stats["anomaliesFiltered"],
+                "filteringRate": self.stats["messagesFiltered"] / max(1, self.stats["messagesSent"] + self.stats["messagesFiltered"])
+            },
             "connectionData": [
                 {
                     "clientId": data["clientId"],
@@ -371,38 +496,63 @@ class WebSocketManager:
                 for data in self.connectionData.values()
             ]
         }
-    
-    def getActiveSignals(self) -> list[str]:
+   
+    def getControlSummary(self) -> Dict[str, Any]:
         """
-        Retorna lista de sinais ativos (recebendo dados).
-        Pode consultar signalManager, zeroMQListener ou dataStreamer para estado.
+        Retorna resumo do estado de controlo do componente.
+        
+        Returns:
+            Resumo com estatísticas e estado atual
         """
-
-        active_signals = []
-
-        try:
-            from ..services import signalManager
-            active_signals = list(signalManager.signals.keys())
-
-            if settings.useRealSensors:
-                from ..services.zeroMQListener import zeroMQListener
-                if zeroMQListener.is_connected():
-                    active_signals = list(signalManager.signals.keys())
-                else:
-                    active_signals = []
-            else:
-                from .dataStreamer import dataStreamer
-                if dataStreamer.is_running():
-                    active_signals = list(signalManager.signals.keys())
-                else:
-                    active_signals = []
-
-        except Exception as e:
-            self.logger.error(f"Error getting active signals: {e}")
-
-        return active_signals
+        available = self.getAvailableSignals()
+        active = self.getActiveSignals()
+        
+        return {
+            "componentState": self.getComponentState().value,
+            "totalSignals": len(available),
+            "activeSignals": len(active),
+            "inactiveSignals": len(available) - len(active),
+            "availableSignals": available,
+            "activeSignalsList": active,
+            "inactiveSignalsList": [s for s in available if s not in active],
+            "filtering": {
+                "messagesFiltered": self.stats["messagesFiltered"],
+                "anomaliesFiltered": self.stats["anomaliesFiltered"],
+                "filteringRate": self.stats["messagesFiltered"] / max(1, 
+                    self.stats["messagesSent"] + self.stats["messagesFiltered"]
+                )
+            },
+            "connections": {
+                "activeConnections": len(self.activeConnections),
+                "maxConnections": self.maxConnections,
+                "connectionEvents": self.stats["connectionEvents"]
+            },
+            "lastUpdate": datetime.now().isoformat()
+        }
     
-
+    def getWebSocketStats(self) -> Dict[str, Any]:
+        """Estatísticas completas do WebSocketManager"""
+        uptime = (datetime.now() - datetime.fromisoformat(self.stats["startTime"])).total_seconds()
+        
+        return {
+            **self.stats,
+            "uptime": uptime,
+            "averageMessageRate": self.stats["messagesSent"] / max(1, uptime),
+            "successRate": 1 - (self.stats["errors"] / max(1, self.stats["messagesSent"])),
+            "filterRate": self.stats["messagesFiltered"] / max(1, self.stats["messagesSent"] + self.stats["messagesFiltered"]),
+            "signalControl": {
+                "availableSignals": self.getAvailableSignals(),
+                "activeSignals": self.getActiveSignals(),
+                "componentState": self.getComponentState().value,
+                "bySignalType": self.stats["bySignalType"]
+            },
+            "connections": {
+                "current": len(self.activeConnections),
+                "maximum": self.maxConnections,
+                "total": self.connectionCounter
+            }
+        }
+    
     async def cleanup(self):
         """Limpa recursos e fecha todas as conexões"""
         self.logger.info("Cleaning up WebSocket connections...")
