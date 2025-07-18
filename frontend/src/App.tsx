@@ -9,13 +9,6 @@ import { useSignalControl } from "./hooks/useSignalControl";
 
 import { Layout } from "react-grid-layout";
 
-interface SignalPoint {
-  timestamp: number;
-  value: any;
-  quality: number;
-  metadata: Record<string, any>;
-}
-
 interface DataPoint {
   x: number;
   value: number;
@@ -24,6 +17,13 @@ interface DataPoint {
 interface EcgBatch{
   timeSeconds: number;
   values: number[];
+}
+
+interface AccProcessedData{
+  x: number;
+  y: number;
+  z: number;
+  timestamp: number;
 }
 
 interface CardType {
@@ -47,6 +47,7 @@ function App() {
     latestCardiacData,
     latestEegData, 
     latestUnityData, 
+    latestSensorData,
     connectionStatus, 
     recentAnomalies,
     connect,
@@ -71,6 +72,7 @@ function App() {
   // Estado para armazenar os batches de ECG brutos recebidos
   const [ecgDataBatches, setEcgDataBatches] = useState<EcgBatch[]>([]);
   const [throttledEcgData, setThrottledEcgData] = useState<DataPoint[]>([]);
+  const [latestAccelerometerData, setLatestAccelerometerData] = useState<AccProcessedData | null>(null);
 
   // Refs para controlar o throttling do ECG
   const lastEcgUpdateTimeRef = useRef(0);
@@ -135,9 +137,6 @@ function App() {
         }
       }
 
-      const desiredDownsampledPointsInWindow = Math.ceil((ECG_WINDOW_DURATION_SECONDS * ECG_SAMPLE_RATE) / ECG_DOWNSAMPLING_FACTOR);
-
-
       return downsampledPoints.slice(-1000);
     };
 
@@ -151,7 +150,26 @@ function App() {
     // Se o tempo não passou, a atualização é ignorada até o próximo intervalo.
     // Isso evita re-renderizações excessivas do gráfico.
 
-  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS]); // Depende dos batches brutos e do intervalo de throttling
+  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS, ECG_SAMPLE_RATE, ECG_WINDOW_DURATION_SECONDS, ECG_DOWNSAMPLING_FACTOR]); // Depende dos batches brutos e do intervalo de throttling
+
+  // useEffect para processar e aplicar throttling aos dados do acelerometro
+  useEffect(() => {
+    if(latestSensorData?.accelerometer?.value){
+      const acc = latestSensorData.accelerometer.value.accelerometer;
+      const lastX = acc.x[acc.x.length - 1];
+      const lastY = acc.y[acc.y.length - 1];
+      const lastZ = acc.z[acc.z.length - 1];
+
+      if(lastX !== undefined && lastY !== undefined && lastZ !== undefined){
+        setLatestAccelerometerData({
+          x: lastX,
+          y: lastY,
+          z: lastZ,
+          timestamp: latestSensorData.accelerometer.timestamp
+        });
+      }
+    }
+  }, [latestSensorData?.accelerometer]);
 
   // Funcoes de manipulação de UI
   const updateLayout = (newLayout: Layout[]) => {
@@ -295,8 +313,8 @@ function App() {
             layout={layoutsPerTab[currentTabId] || []}
             onLayoutChange={updateLayout}
             heartRateData={heartRateData}
-            // ✅ ATUALIZADO: Passando os dados de ECG throttled
-            ecgData={throttledEcgData} 
+            ecgData={throttledEcgData}
+            accelerometerData={latestAccelerometerData}
             onDisableSignal={(cardId) => {
               const card = currentCards.find(c => c.id === cardId);
               if (card) {
