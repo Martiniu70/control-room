@@ -109,7 +109,8 @@ class CardioWheelEcgGenerator:
                     self.ecgPhase -= 2 * np.pi
                     # Variar HR ligeiramente a cada batimento
                     self._updateHeartRate()
-            
+
+
             # Avançar timestamp para próximo chunk
             self.currentTimestamp += self.chunkDuration
             
@@ -174,7 +175,6 @@ class CardioWheelEcgGenerator:
         
         # Valor final ADC
         adcValue = self.baselineValue + ecgWave + noise
-        
         # Clipar para range ADC 16-bit 
         return np.clip(adcValue, -32768, 32767)
     
@@ -185,22 +185,28 @@ class CardioWheelEcgGenerator:
         Returns:
             Amplitude ECG relativa ao baseline
         """
+        # Fatores de escala (1 mV = 6400 ADC)
+        P_SCALE = 6400    # 0.2 mV * 6400 = 1280 ADC
+        QRS_SCALE = 6400  # 1.5 mV * 6400 = 9600 ADC
+        T_SCALE = 6400    # 0.3 mV * 6400 = 1920 ADC
+
         
         # ECG simplificado com 3 componentes principais
         # P wave (pequena, antes do QRS)
-        p_wave = 5 * np.exp(-((self.ecgPhase - 0.2) / 0.1)**2) if 0.1 < self.ecgPhase < 0.3 else 0
+        pWave = 0.2 * P_SCALE * np.exp(-((self.ecgPhase - 0.2) / 0.1)**2) if 0.1 < self.ecgPhase < 0.3 else 0
         
         # QRS complex (grande, sharp)
         if 0.8 < self.ecgPhase < 1.2:
-            qrs_phase = (self.ecgPhase - 1.0) / 0.2
-            qrs_wave = 100 * np.exp(-(qrs_phase**2) * 10)
+            qrsPhase = (self.ecgPhase - 1.0) / 0.2
+            qrsWave = 1.5 * QRS_SCALE * np.exp(-(qrsPhase**2) * 10)
         else:
-            qrs_wave = 0
+            qrsWave = 0
+            
         
         # T wave (média, depois do QRS)
-        t_wave = 15 * np.exp(-((self.ecgPhase - 1.8) / 0.3)**2) if 1.4 < self.ecgPhase < 2.2 else 0
+        tWave = 0.3 * T_SCALE * np.exp(-((self.ecgPhase - 1.8) / 0.3)**2) if 1.4 < self.ecgPhase < 2.2 else 0
         
-        return p_wave + qrs_wave + t_wave
+        return pWave + qrsWave + tWave
     
     def _generateLodSample(self) -> int:
         """
