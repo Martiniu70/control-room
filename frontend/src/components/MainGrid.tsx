@@ -21,17 +21,19 @@ interface Point{
   value: number;
 }
 
-interface EcgBatch{
-  timeSeconds: number;
-  values: number[];
-}
+// ✅ REMOVIDO: EcgBatch não é mais necessário aqui, pois App.tsx já achata e throttles os dados
+// interface EcgBatch{
+//   timeSeconds: number;
+//   values: number[];
+// }
 
 interface MainGridProps {
   items: CardType[];
   layout: Layout[];
   onLayoutChange: (layout: Layout[]) => void;
-  ecgDataBatches: EcgBatch[];
-  heartRateData: Point[]; // Dados específicos de HR
+  // ✅ ATUALIZADO: Agora MainGrid recebe 'ecgData' como uma array de Point[], já processada e throttled
+  ecgData: Point[]; 
+  heartRateData: Point[]; 
   onDisableSignal: (cardId: string) => void;
 }
 
@@ -46,7 +48,8 @@ const MainGrid: React.FC<MainGridProps> = ({
   layout, 
   onLayoutChange, 
   heartRateData,
-  ecgDataBatches, 
+  // ✅ ATUALIZADO: Recebe 'ecgData'
+  ecgData, 
   onDisableSignal
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,7 +67,8 @@ const MainGrid: React.FC<MainGridProps> = ({
       if (!containerRef.current) return;
 
       const clientWidth = containerRef.current.clientWidth;
-      const cols = Math.floor((clientWidth + GAP) / (ITEM_WIDTH + GAP));
+      // Garante que cols seja pelo menos 1
+      const cols = Math.floor((clientWidth + GAP) / (ITEM_WIDTH + GAP)) || 1; 
 
       setGridProps((prev) => ({
         ...prev,
@@ -110,33 +114,16 @@ const MainGrid: React.FC<MainGridProps> = ({
     })),
   ];
 
-  // ✅ FUNÇÃO ATUALIZADA: Preparar dados para cada tipo de gráfico
+  // ✅ ATUALIZADO: Função para preparar dados para cada tipo de gráfico
   const getChartData = (cardType: CardType) => {
     switch (cardType.signalType) {
       case 'hr':
-        // Dados HR já estão formatados como Point[], apenas filtramos se necessário
         return heartRateData.filter(point => point.value !== undefined);
       
       case 'ecg':
-        const ecgPoints: Point[] = [];
-        // ✅ IMPORTANTE: VERIFIQUE se esta sampleRate (200) corresponde à taxa real dos seus dados ECG.
-        // Se for diferente, ajuste aqui.
-        const sampleRate = 200; 
-        const sampleDuration = 1 / sampleRate;
-        const windowDuration = 5; // Duração da janela para ECG em segundos (ex: 5 segundos)
-        const desiredPointsInWindow = Math.ceil(windowDuration * sampleRate); // Calcular quantos pontos precisamos
-
-        // ✅ ACUMULAR TODOS OS PONTOS DOS BATCHES RECENTES
-        ecgDataBatches.forEach(batch => {
-          batch.values.forEach((val, index) => {
-            const pointTime = batch.timeSeconds + (index * sampleDuration);
-            ecgPoints.push({x: pointTime, value: val});
-          });
-        });
-        
-        // ✅ CORTAR A ARRAY PARA CONTER APENAS OS PONTOS DENTRO DA JANELA DE INTERESSE
-        // Isso é crucial para evitar que o gráfico se comprima com muitos dados históricos.
-        return ecgPoints.slice(-desiredPointsInWindow); 
+        // ✅ REMOVIDO: A lógica de aplanar e fatiar os dados de ECG foi movida para App.tsx.
+        // Agora MainGrid apenas passa os dados 'ecgData' que já vêm prontos.
+        return ecgData; 
       
       case 'eeg':
         // TODO - dados EEG
@@ -152,6 +139,10 @@ const MainGrid: React.FC<MainGridProps> = ({
       case 'hr': return "#e74c3c";
       case 'ecg': return "#27ae60";
       case 'eeg': return "#8884d8";
+      case 'gyroscope': return "#f39c12";
+      case 'accelerometer': return "#9b59b6";
+      case 'steering': return "#3498db";
+      case 'speed': return "#e67e22";
       default: return "#95a5a6";
     }
   };
@@ -204,10 +195,6 @@ const MainGrid: React.FC<MainGridProps> = ({
               </div>
               
               <div className="flex-1 p-2">
-                {/* Removi a condição extra com item.signalType === 'hr' || item.signalType === "ecg"
-                    porque getChartData sempre retorna [] se não houver dados ou não for um tipo gerido.
-                    A condição chartData.length > 0 já é suficiente para mostrar o ChartCard
-                    com 'Waiting for data...' se a array estiver vazia. */}
                 <ChartCard 
                   title=""
                   color={chartColor}

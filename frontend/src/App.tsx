@@ -1,3 +1,4 @@
+// App.tsx
 import React, { useState, useEffect, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import MainGrid from "./components/MainGrid";
@@ -67,7 +68,18 @@ function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const startTimeRef = useRef<number>(Date.now());
   const [heartRateData, setHeartRateData] = useState<DataPoint[]>([]);
+  // Estado para armazenar os batches de ECG brutos recebidos
   const [ecgDataBatches, setEcgDataBatches] = useState<EcgBatch[]>([]);
+  const [throttledEcgData, setThrottledEcgData] = useState<DataPoint[]>([]);
+
+  // Refs para controlar o throttling do ECG
+  const lastEcgUpdateTimeRef = useRef(0);
+  const ECG_THROTTLE_INTERVAL_MS = 1;
+  const ECG_SAMPLE_RATE = 1000;
+  const ECG_WINDOW_DURATION_SECONDS = 5;
+  
+  const ECG_DOWNSAMPLING_FACTOR = 10;
+
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, label: "Tab 1" }]);
   const [currentTabId, setCurrentTabId] = useState<number>(1);
   const [nextTabId, setNextTabId] = useState<number>(2);
@@ -83,10 +95,11 @@ function App() {
         x: currentTimeSeconds,
         value: latestCardiacData.hr.value
       };
-      setHeartRateData(prev => [...prev, newDataPoint].slice(-200));
+      setHeartRateData(prev => [...prev, newDataPoint].slice(-200)); // Manter histórico para HR
     }
   }, [latestCardiacData?.hr]);
 
+  // Efeito para acumular batches de ECG brutos
   useEffect(() => {
     if(latestCardiacData?.ecg && Array.isArray(latestCardiacData.ecg.value)){
       const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
@@ -94,9 +107,51 @@ function App() {
         timeSeconds : currentTimeSeconds,
         values: latestCardiacData.ecg.value
       };
-      setEcgDataBatches(prev => [...prev, newEcgBatch].slice(-50));
+      // Manter um número suficiente de batches para a janela de visualização do ChartCard
+      // Ex: se o ChartCard mostra 5s de ECG a 200Hz, e cada batch tem 20 amostras (0.1s),
+      // precisamos de 50 batches. Manter 100 batches dá um bom buffer.
+      const maxBatchesToKeep = 100; 
+      setEcgDataBatches(prev => [...prev, newEcgBatch].slice(-maxBatchesToKeep));
     }
   }, [latestCardiacData?.ecg]);
+
+  useEffect(() => {
+    // Função para achatar os batches de ECG em uma array de pontos plotáveis
+    const flattenEcgBatches = (batches: EcgBatch[]): DataPoint[] => {
+      const allPoints: DataPoint[] = [];
+      const sampleDuration = 1 / ECG_SAMPLE_RATE;
+
+      batches.forEach(batch => {
+        batch.values.forEach((val, index) => {
+          const pointTime = batch.timeSeconds + (index * sampleDuration);
+          allPoints.push({x: pointTime, value: val});
+        });
+      });
+
+      const downsampledPoints: DataPoint[] = [];
+      for (let i = 0; i < allPoints.length; i++){
+        if(i % ECG_DOWNSAMPLING_FACTOR === 0){
+          downsampledPoints.push(allPoints[i]);
+        }
+      }
+
+      const desiredDownsampledPointsInWindow = Math.ceil((ECG_WINDOW_DURATION_SECONDS * ECG_SAMPLE_RATE) / ECG_DOWNSAMPLING_FACTOR);
+
+
+      return downsampledPoints.slice(-1000);
+    };
+
+    const now = Date.now();
+    // Aplica o throttling: só atualiza se o tempo de intervalo tiver passado
+    if (now - lastEcgUpdateTimeRef.current > ECG_THROTTLE_INTERVAL_MS) {
+      const newEcgPoints = flattenEcgBatches(ecgDataBatches);
+      setThrottledEcgData(newEcgPoints);
+      lastEcgUpdateTimeRef.current = now;
+    }
+    // Se o tempo não passou, a atualização é ignorada até o próximo intervalo.
+    // Isso evita re-renderizações excessivas do gráfico.
+
+  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS]); // Depende dos batches brutos e do intervalo de throttling
 
   // Funcoes de manipulação de UI
   const updateLayout = (newLayout: Layout[]) => {
@@ -147,7 +202,6 @@ function App() {
   };
 
   const addCard = (component: string, signalName: string) => {
-    // Determina o tipo de sinal baseado no nome
     let signalType: CardType["signalType"] = "hr";
     if (signalName.includes("ecg")) signalType = "ecg";
     else if (signalName.includes("eeg")) signalType = "eeg";
@@ -172,7 +226,6 @@ function App() {
     }));
     setCardIdCounter((prev) => prev + 1);
 
-    // Ativar o sinal se nao estiver ativo
     if(!activeSignals[component]?.includes(signalName)){
       enableSignal(component, signalName);
     }
@@ -187,7 +240,7 @@ function App() {
   // Quando o utilizador clicar num sinal dentro do modal
   const handleSignalSelect = (component: string, signalName: string) => {
     addCard(component, signalName)
-    setModalOpen(false);  // Fecha modal
+    setModalOpen(false); 
   };
   
   const currentCards = cardsPerTab[currentTabId] || [];
@@ -242,7 +295,8 @@ function App() {
             layout={layoutsPerTab[currentTabId] || []}
             onLayoutChange={updateLayout}
             heartRateData={heartRateData}
-            ecgDataBatches={ecgDataBatches}
+            // ✅ ATUALIZADO: Passando os dados de ECG throttled
+            ecgData={throttledEcgData} 
             onDisableSignal={(cardId) => {
               const card = currentCards.find(c => c.id === cardId);
               if (card) {
@@ -268,7 +322,8 @@ function App() {
           <div className="flex gap-4">
             <span>HR Points: {heartRateData.length}</span>
             <span>Latest HR: {heartRateData[heartRateData.length - 1]?.value ?? 'N/A'} bpm</span>
-            <span>ECG Batches: {ecgDataBatches.length}</span>
+            <span>ECG Batches (Raw): {ecgDataBatches.length}</span>
+            <span>ECG Points (Throttled): {throttledEcgData.length}</span> {/* ✅ DEBUG para dados throttled */}
             <span>Time Running: {((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s</span>
             <span>Connected: {connectionStatus.connected ? 'Yes' : 'No'}</span>
             <span>Anomalies: {recentAnomalies.length}</span>
