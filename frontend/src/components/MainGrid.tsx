@@ -1,29 +1,47 @@
+// MainGrid.tsx
 import React, { useEffect, useRef, useState } from "react";
 import ChartCard from "./ChartCard";
 import GridLayout, { Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
+// ✅ Importar o AccelerometerCard
+import AccelerometerCard from "./AccCard"; 
+
+// ✅ ATUALIZADO: Adicionado 'accelerometer' ao SignalType
+type SignalType = "hr" | "ecg" | "eeg" | "gyroscope" | "accelerometer" | "steering" | "speed" | string;
 
 interface CardType {
   id: string;
   label: string;
   colSpan: number;
   rowSpan: number;
-  signalType: 'hr' | 'ecg' | 'eeg' | 'steering' | 'speed';
+  signalType: SignalType;
+  signalName: string;
+  component: string;
 }
 
-interface DataPoint {
-  timeSeconds: number;  // Tempo real em segundos
-  hr?: number;         // Heart Rate
-  ecg?: number;        // TODO
-  eeg?: number;        // TODO
+interface Point{
+  x: number;
+  value: number;
+}
+
+// ✅ NOVO: Interface para os dados do acelerómetro processados
+interface AccelerometerProcessedData {
+  x: number;
+  y: number;
+  z: number;
+  timestamp: number;
 }
 
 interface MainGridProps {
   items: CardType[];
   layout: Layout[];
   onLayoutChange: (layout: Layout[]) => void;
-  heartRateData: DataPoint[]; // Dados específicos de HR
+  ecgData: Point[]; 
+  heartRateData: Point[]; 
+  // ✅ NOVO: Prop para os dados do acelerómetro
+  accelerometerData: AccelerometerProcessedData | null; 
+  onDisableSignal: (cardId: string) => void;
 }
 
 interface GridProps {
@@ -36,7 +54,11 @@ const MainGrid: React.FC<MainGridProps> = ({
   items, 
   layout, 
   onLayoutChange, 
-  heartRateData
+  heartRateData,
+  ecgData, 
+  // ✅ Recebe os dados do acelerómetro
+  accelerometerData, 
+  onDisableSignal
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gridProps, setGridProps] = useState<GridProps>({
@@ -53,7 +75,7 @@ const MainGrid: React.FC<MainGridProps> = ({
       if (!containerRef.current) return;
 
       const clientWidth = containerRef.current.clientWidth;
-      const cols = Math.floor((clientWidth + GAP) / (ITEM_WIDTH + GAP));
+      const cols = Math.floor((clientWidth + GAP) / (ITEM_WIDTH + GAP)) || 1; 
 
       setGridProps((prev) => ({
         ...prev,
@@ -67,7 +89,6 @@ const MainGrid: React.FC<MainGridProps> = ({
     return () => window.removeEventListener("resize", calculateGrid);
   }, []);
 
-  // Layout definition for RGL (mantido igual)
   const initialLayout: Layout[] = layout.length
     ? layout
     : items.map((item, i) => ({
@@ -100,21 +121,13 @@ const MainGrid: React.FC<MainGridProps> = ({
     })),
   ];
 
-  // ✅ FUNÇÃO SIMPLES: Preparar dados para cada tipo de gráfico
   const getChartData = (cardType: CardType) => {
     switch (cardType.signalType) {
       case 'hr':
-        // Converter dados HR para formato do ChartCard
-        return heartRateData
-          .filter(point => point.hr !== undefined)
-          .map(point => ({
-            x: point.timeSeconds,
-            value: point.hr!
-          }));
+        return heartRateData.filter(point => point.value !== undefined);
       
       case 'ecg':
-        // TODO - dados ECG
-        return [];
+        return ecgData; 
       
       case 'eeg':
         // TODO - dados EEG
@@ -125,13 +138,29 @@ const MainGrid: React.FC<MainGridProps> = ({
     }
   };
 
-  // Escolher cor por tipo
-  const getChartColor = (signalType: CardType['signalType']) => {
+  const getChartColor = (signalType: string) => {
     switch (signalType) {
-      case 'hr': return "#e74c3c";      // Vermelho para HR
-      case 'ecg': return "#27ae60";     // Verde para ECG
-      case 'eeg': return "#8884d8";     // Azul para EEG
-      default: return "#95a5a6";        // Cinza para outros
+      case 'hr': return "#e74c3c";
+      case 'ecg': return "#27ae60";
+      case 'eeg': return "#8884d8";
+      case 'gyroscope': return "#f39c12";
+      case 'accelerometer': return "#9b59b6"; // ✅ Cor para acelerómetro
+      case 'steering': return "#3498db";
+      case 'speed': return "#e67e22";
+      default: return "#95a5a6";
+    }
+  };
+
+  const getChartUnit = (signalType: string) => {
+    switch (signalType) {
+      case 'hr': return "bpm";
+      case 'ecg': return "mV";
+      case 'eeg': return "µV";
+      case 'gyroscope': return "deg/s";
+      case 'accelerometer': return "m/s²"; // ✅ Unidade para acelerómetro
+      case 'steering': return "deg";
+      case 'speed': return "km/h";
+      default: return "";
     }
   };
 
@@ -149,31 +178,47 @@ const MainGrid: React.FC<MainGridProps> = ({
         onLayoutChange={onLayoutChange}
       >
         {items.map((item) => {
-          const chartData = getChartData(item);
           const chartColor = getChartColor(item.signalType);
+          const chartUnit = getChartUnit(item.signalType);
           
           return (
             <div
               key={item.id}
-              className="bg-white rounded-lg shadow-md flex items-center justify-center text-gray-700 font-semibold overflow-hidden"
+              className="bg-white rounded-lg shadow-md flex flex-col"
             >
-              {/* RENDERIZAÇÃO SIMPLES BASEADA NO TIPO */}
-              {item.signalType === 'hr' && (
-                <ChartCard 
-                  title={`Heart Rate (${chartData.length} points)`}
-                  color={chartColor}
-                  data={chartData}
-                  width={280}
-                  height={180}
-                />
-              )}
+              <div className="flex justify-between items-center p-2 border-b">
+                <h3 className="font-medium text-sm">{item.label}</h3>
+                <button 
+                  onClick={() => onDisableSignal(item.id)}
+                  className="text-xs text-red-500 hover:text-red-700"
+                  title="Disable signal"
+                >
+                  Disable
+                </button>
+              </div>
               
-              {item.signalType !== 'hr' && (
-                <div className="text-center text-gray-500">
-                  <h3 className="font-medium">{item.label}</h3>
-                  <p className="text-sm">Coming soon...</p>
-                </div>
-              )}
+              <div className="flex-1 p-2">
+                {/* ✅ Lógica condicional para renderizar o card correto */}
+                {item.signalType === 'accelerometer' ? (
+                  <AccelerometerCard
+                    title="" // O título já está no header do card
+                    data={accelerometerData}
+                    // Passar largura e altura que se ajustem ao grid
+                    width={gridProps.width / gridProps.cols - GAP * 2}
+                    height={gridProps.rowHeight - 60} // Ajustar para o espaço disponível
+                  />
+                ) : (
+                  <ChartCard 
+                    title=""
+                    color={chartColor}
+                    data={getChartData(item)} // Usa getChartData para ChartCard
+                    unit={chartUnit}
+                    // Passar largura e altura que se ajustem ao grid
+                    width={gridProps.width / gridProps.cols - GAP * 2}
+                    height={gridProps.rowHeight - 60} // Ajustar para o espaço disponível
+                  />
+                )}
+              </div>
             </div>
           );
         })}

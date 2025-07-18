@@ -1,22 +1,29 @@
+// App.tsx
 import React, { useState, useEffect, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import MainGrid from "./components/MainGrid";
-import Header from "./Header";
+import Header from "./components/Header";
+import SignalModal from "./components/SignalModal";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useSignalControl } from "./hooks/useSignalControl";
+
 import { Layout } from "react-grid-layout";
 
-interface SignalPoint {
-  timestamp: number;
-  value: any;
-  quality: number;
-  metadata: Record<string, any>;
+interface DataPoint {
+  x: number;
+  value: number;
 }
 
-interface DataPoint {
-  timeSeconds: number;  // Tempo real em segundos desde início
-  hr?: number;         // Heart Rate
-  ecg?: number;        // TODO
-  eeg?: number;        // TODO
+interface EcgBatch{
+  timeSeconds: number;
+  values: number[];
+}
+
+interface AccProcessedData{
+  x: number;
+  y: number;
+  z: number;
+  timestamp: number;
 }
 
 interface CardType {
@@ -24,7 +31,9 @@ interface CardType {
   label: string;
   colSpan: number;
   rowSpan: number;
-  signalType: 'hr' | 'ecg' | 'eeg' | 'steering' | 'speed';
+  signalType: 'hr' | 'ecg' | 'eeg' | "gyroscope" | "accelerometer" | 'steering' | 'speed';
+  component: string;
+  signalName: string;
 }
 
 interface Tab {
@@ -35,22 +44,44 @@ interface Tab {
 function App() {
   // WebSocket connection to backend
   const { 
-    latestCardiacData, 
+    latestCardiacData,
     latestEegData, 
     latestUnityData, 
+    latestSensorData,
     connectionStatus, 
     recentAnomalies,
     connect,
     disconnect
   } = useWebSocket();
 
-  // ✅ TEMPO REAL: Referência de quando começou
-  const startTimeRef = useRef<number>(Date.now());
-  
-  // ✅ DADOS SIMPLES: Array de pontos com tempo real
-  const [heartRateData, setHeartRateData] = useState<DataPoint[]>([]);
+  const {
+    availableSignals,
+    activeSignals,
+    loading: signalsLoading,
+    fetchSignalStatus,
+    loadSignals,
+    enableAllSignals,
+    enableSignal,
+    disableSignal
+  } = useSignalControl();
 
-  // Tab management (mantido igual)
+  // Estados do componente
+  const [modalOpen, setModalOpen] = useState(false);
+  const startTimeRef = useRef<number>(Date.now());
+  const [heartRateData, setHeartRateData] = useState<DataPoint[]>([]);
+  // Estado para armazenar os batches de ECG brutos recebidos
+  const [ecgDataBatches, setEcgDataBatches] = useState<EcgBatch[]>([]);
+  const [throttledEcgData, setThrottledEcgData] = useState<DataPoint[]>([]);
+  const [latestAccelerometerData, setLatestAccelerometerData] = useState<AccProcessedData | null>(null);
+
+  // Refs para controlar o throttling do ECG
+  const lastEcgUpdateTimeRef = useRef(0);
+  const ECG_THROTTLE_INTERVAL_MS = 1;
+  const ECG_SAMPLE_RATE = 1000;
+  const ECG_WINDOW_DURATION_SECONDS = 5;
+  
+  const ECG_DOWNSAMPLING_FACTOR = 10;
+
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, label: "Tab 1" }]);
   const [currentTabId, setCurrentTabId] = useState<number>(1);
   const [nextTabId, setNextTabId] = useState<number>(2);
@@ -58,25 +89,89 @@ function App() {
   const [cardsPerTab, setCardsPerTab] = useState<Record<number, CardType[]>>({ 1: [] });
   const [cardIdCounter, setCardIdCounter] = useState<number>(1);
 
-  // ✅ PROCESSAMENTO SIMPLES: Só processar quando HR chega
+  // Atualizar dados de frequencia cardiaca
   useEffect(() => {
     if (latestCardiacData?.hr) {
       const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
-      
       const newDataPoint: DataPoint = {
-        timeSeconds: currentTimeSeconds,
-        hr: latestCardiacData.hr.value
+        x: currentTimeSeconds,
+        value: latestCardiacData.hr.value
       };
-
-      setHeartRateData(prev => [
-        ...prev,
-        newDataPoint
-      ].slice(-200)); // Manter últimos 200 pontos (cerca de 3-5 minutos)
-      
-      console.log(`HR received: ${latestCardiacData.hr.value} bpm at ${currentTimeSeconds.toFixed(1)}s`);
+      setHeartRateData(prev => [...prev, newDataPoint].slice(-200)); // Manter histórico para HR
     }
   }, [latestCardiacData?.hr]);
 
+  // Efeito para acumular batches de ECG brutos
+  useEffect(() => {
+    if(latestCardiacData?.ecg && Array.isArray(latestCardiacData.ecg.value)){
+      const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
+      const newEcgBatch: EcgBatch = {
+        timeSeconds : currentTimeSeconds,
+        values: latestCardiacData.ecg.value
+      };
+      // Manter um número suficiente de batches para a janela de visualização do ChartCard
+      // Ex: se o ChartCard mostra 5s de ECG a 200Hz, e cada batch tem 20 amostras (0.1s),
+      // precisamos de 50 batches. Manter 100 batches dá um bom buffer.
+      const maxBatchesToKeep = 100; 
+      setEcgDataBatches(prev => [...prev, newEcgBatch].slice(-maxBatchesToKeep));
+    }
+  }, [latestCardiacData?.ecg]);
+
+  useEffect(() => {
+    // Função para achatar os batches de ECG em uma array de pontos plotáveis
+    const flattenEcgBatches = (batches: EcgBatch[]): DataPoint[] => {
+      const allPoints: DataPoint[] = [];
+      const sampleDuration = 1 / ECG_SAMPLE_RATE;
+
+      batches.forEach(batch => {
+        batch.values.forEach((val, index) => {
+          const pointTime = batch.timeSeconds + (index * sampleDuration);
+          allPoints.push({x: pointTime, value: val});
+        });
+      });
+
+      const downsampledPoints: DataPoint[] = [];
+      for (let i = 0; i < allPoints.length; i++){
+        if(i % ECG_DOWNSAMPLING_FACTOR === 0){
+          downsampledPoints.push(allPoints[i]);
+        }
+      }
+
+      return downsampledPoints.slice(-1000);
+    };
+
+    const now = Date.now();
+    // Aplica o throttling: só atualiza se o tempo de intervalo tiver passado
+    if (now - lastEcgUpdateTimeRef.current > ECG_THROTTLE_INTERVAL_MS) {
+      const newEcgPoints = flattenEcgBatches(ecgDataBatches);
+      setThrottledEcgData(newEcgPoints);
+      lastEcgUpdateTimeRef.current = now;
+    }
+    // Se o tempo não passou, a atualização é ignorada até o próximo intervalo.
+    // Isso evita re-renderizações excessivas do gráfico.
+
+  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS, ECG_SAMPLE_RATE, ECG_WINDOW_DURATION_SECONDS, ECG_DOWNSAMPLING_FACTOR]); // Depende dos batches brutos e do intervalo de throttling
+
+  // useEffect para processar e aplicar throttling aos dados do acelerometro
+  useEffect(() => {
+    if(latestSensorData?.accelerometer?.value){
+      const acc = latestSensorData.accelerometer.value.accelerometer;
+      const lastX = acc.x[acc.x.length - 1];
+      const lastY = acc.y[acc.y.length - 1];
+      const lastZ = acc.z[acc.z.length - 1];
+
+      if(lastX !== undefined && lastY !== undefined && lastZ !== undefined){
+        setLatestAccelerometerData({
+          x: lastX,
+          y: lastY,
+          z: lastZ,
+          timestamp: latestSensorData.accelerometer.timestamp
+        });
+      }
+    }
+  }, [latestSensorData?.accelerometer]);
+
+  // Funcoes de manipulação de UI
   const updateLayout = (newLayout: Layout[]) => {
     setLayoutsPerTab((prev) => ({
       ...prev,
@@ -113,14 +208,34 @@ function App() {
     });
   };
 
-  // ✅ CARDS SIMPLES: Começar sempre com HR
-  const addCard = () => {
+  // Mapeamento de tipos de sinal para labels
+  const labelMap: Record<CardType["signalType"], string> = {
+    hr: "Heart Rate",
+    ecg: "ECG",
+    eeg: "EEG",
+    gyroscope: "Gyro",
+    accelerometer: "Acc",
+    steering: "Steering",
+    speed: "Speed"
+  };
+
+  const addCard = (component: string, signalName: string) => {
+    let signalType: CardType["signalType"] = "hr";
+    if (signalName.includes("ecg")) signalType = "ecg";
+    else if (signalName.includes("eeg")) signalType = "eeg";
+    else if (signalName.includes("accelerometer")) signalType = "accelerometer";
+    else if (signalName.includes("gyroscope")) signalType = "gyroscope";
+    else if (signalName.includes("steering")) signalType = "steering";
+    else if (signalName.includes("speed")) signalType = "speed";
+
     const newCard: CardType = {
       id: `${currentTabId}-${cardIdCounter}`,
-      label: `Heart Rate`,
+      label: `${labelMap[signalType]} (${signalName})`,
       colSpan: 1,
       rowSpan: 1,
-      signalType: 'hr', // ✅ Sempre HR por enquanto
+      signalType,
+      component,
+      signalName
     };
     
     setCardsPerTab((prev) => ({
@@ -128,8 +243,24 @@ function App() {
       [currentTabId]: [...(prev[currentTabId] || []), newCard],
     }));
     setCardIdCounter((prev) => prev + 1);
+
+    if(!activeSignals[component]?.includes(signalName)){
+      enableSignal(component, signalName);
+    }
   };
 
+  // Ao clicar no botão Add Card no Header, abrir modal
+  const handleAddCardClick = () => {
+    loadSignals();
+    setModalOpen(true);
+  };
+
+  // Quando o utilizador clicar num sinal dentro do modal
+  const handleSignalSelect = (component: string, signalName: string) => {
+    addCard(component, signalName)
+    setModalOpen(false); 
+  };
+  
   const currentCards = cardsPerTab[currentTabId] || [];
 
   return (
@@ -166,7 +297,7 @@ function App() {
         )}
       </div>
 
-      <Header onAddCard={addCard} />
+      <Header onAddCard={handleAddCardClick} />
       
       <div className="flex flex-1">
         <Sidebar
@@ -182,19 +313,39 @@ function App() {
             layout={layoutsPerTab[currentTabId] || []}
             onLayoutChange={updateLayout}
             heartRateData={heartRateData}
+            ecgData={throttledEcgData}
+            accelerometerData={latestAccelerometerData}
+            onDisableSignal={(cardId) => {
+              const card = currentCards.find(c => c.id === cardId);
+              if (card) {
+                disableSignal(card.component, card.signalName);
+              }
+            }}
           />
         </main>
       </div>
 
-      {/* ✅ DEBUG PANEL SIMPLES */}
+      {/* Modal para seleção de sinais */}
+      <SignalModal 
+        open={modalOpen}
+        availableSignals={availableSignals}
+        loading={signalsLoading}
+        onClose={() => setModalOpen(false)}
+        onSelect={handleSignalSelect}
+      />
+
+      {/* DEBUG PANEL */}
       {process.env.NODE_ENV === 'development' && (
         <div className="bg-gray-800 text-white p-2 text-xs">
           <div className="flex gap-4">
             <span>HR Points: {heartRateData.length}</span>
-            <span>Latest HR: {heartRateData[heartRateData.length - 1]?.hr ?? 'N/A'} bpm</span>
+            <span>Latest HR: {heartRateData[heartRateData.length - 1]?.value ?? 'N/A'} bpm</span>
+            <span>ECG Batches (Raw): {ecgDataBatches.length}</span>
+            <span>ECG Points (Throttled): {throttledEcgData.length}</span> {/* ✅ DEBUG para dados throttled */}
             <span>Time Running: {((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s</span>
             <span>Connected: {connectionStatus.connected ? 'Yes' : 'No'}</span>
             <span>Anomalies: {recentAnomalies.length}</span>
+            <span>Signals Loading: {signalsLoading ? 'Yes' : 'No'}</span>
           </div>
         </div>
       )}

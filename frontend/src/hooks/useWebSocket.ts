@@ -18,8 +18,8 @@ interface SignalPoint {
 // Mensagem de actualização de dados normais do backend
 interface BackendSignalUpdate {
   type: 'signal.update';      // Identificador do tipo de mensagem
-  signalType: 'cardiac' | 'eeg' | 'camera' | 'unity'; // Que sensor
-  dataType: 'ecg' | 'hr' | 'eegRaw' | 'eegBands' | 'landmarks' | 'blinks' | 'steering' | 'speed'; // Que tipo de dados
+  signalType: 'cardiac' | 'eeg' | 'camera' | 'unity' | "sensors"; // Que sensor
+  dataType: 'ecg' | 'hr' | 'eegRaw' | 'eegBands' | 'landmarks' | 'blinks' | 'steering' | 'speed' | "accelerometer"; // Que tipo de dados
   timestamp: number;          // Quando foi processado
   value: any;                // O valor dos dados
   anomalies?: string[];      // Lista de anomalias detectadas (opcional)
@@ -48,7 +48,11 @@ interface BackendSystemHeartbeat {
 }
 
 // União de todos os tipos de mensagens possíveis do backend
-type BackendMessage = BackendSignalUpdate | BackendAnomalyAlert | BackendSystemHeartbeat | {
+type BackendMessage = 
+  | BackendSignalUpdate 
+  | BackendAnomalyAlert 
+  | BackendSystemHeartbeat
+  | {
   type: 'zmq.connected' | 'zmq.error' | 'zmq.warning' | 'zmq.heartbeat' | 'connection.established';
   [key: string]: any; // Permite propriedades adicionais
 };
@@ -60,6 +64,11 @@ interface ConnectionStatus {
   error: string | null;     // Mensagem de erro (se houver)
 }
 
+interface LatestSensorData{
+  accelerometer?:SignalPoint;
+  gyroscope?: SignalPoint;
+}
+
 // O que o hook retorna para os componentes que o usam
 interface UseWebSocketReturn {
   // Dados mais recentes de cada tipo de sinal
@@ -67,13 +76,14 @@ interface UseWebSocketReturn {
   latestEegData: { raw?: SignalPoint; bands?: SignalPoint } | null;
   latestCameraData: { landmarks?: SignalPoint; blinks?: SignalPoint } | null;
   latestUnityData: { steering?: SignalPoint; speed?: SignalPoint } | null;
-  
+  latestSensorData: LatestSensorData | null;
+
   // Estado da conexão
   connectionStatus: ConnectionStatus;
   
   // Lista das últimas anomalias detectadas
   recentAnomalies: string[];
-  
+
   // Funções para controlar a conexão manualmente
   connect: () => void;
   disconnect: () => void;
@@ -101,7 +111,8 @@ export const useWebSocket = (
   const [latestEegData, setLatestEegData] = useState<{ raw?: SignalPoint; bands?: SignalPoint } | null>(null);
   const [latestCameraData, setLatestCameraData] = useState<{ landmarks?: SignalPoint; blinks?: SignalPoint } | null>(null);
   const [latestUnityData, setLatestUnityData] = useState<{ steering?: SignalPoint; speed?: SignalPoint } | null>(null);
-  
+  const [latestSensorData, setLatestSensorData] = useState<{accelerometer?: SignalPoint} | null>(null);
+
   // Estado da conexão WebSocket
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     connected: false,
@@ -354,6 +365,13 @@ export const useWebSocket = (
           [dataType]: signalPoint
         }));
         break;
+
+      case "sensors":
+        setLatestSensorData(prev => ({
+          ...prev,
+          [dataType]: signalPoint
+        }));
+        break;
     }
     
     // Adicionar anomalias vindas com os dados (se existirem)
@@ -428,6 +446,7 @@ export const useWebSocket = (
     latestEegData,
     latestCameraData,
     latestUnityData,
+    latestSensorData,
     
     // Estado da conexão
     connectionStatus,
