@@ -4,11 +4,13 @@ import ChartCard from "./ChartCard";
 import GridLayout, { Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-// ✅ Importar o AccelerometerCard
 import AccelerometerCard from "./AccCard"; 
+import EegRawCard from "./EegRawCard";
+// NOVO: Importar o GyroscopeCard
+import GyroscopeCard from "./GyroCard";
 
-// ✅ ATUALIZADO: Adicionado 'accelerometer' ao SignalType
-type SignalType = "hr" | "ecg" | "eeg" | "gyroscope" | "accelerometer" | "steering" | "speed" | string;
+// ATUALIZADO: Adicionado 'gyroscope' ao SignalType
+type SignalType = "hr" | "ecg" | "eeg" | "gyroscope" | "accelerometer" | "steering" | "speed" | "eegRaw" | string;
 
 interface CardType {
   id: string;
@@ -25,12 +27,23 @@ interface Point{
   value: number;
 }
 
-// ✅ NOVO: Interface para os dados do acelerómetro processados
 interface AccelerometerProcessedData {
   x: number;
   y: number;
   z: number;
   timestamp: number;
+}
+
+// NOVO: Interface para os dados do giroscópio processados
+interface GyroscopeProcessedData {
+  x: number[];
+  y: number[];
+  z: number[];
+  timestamp: number;
+}
+
+interface EegRawProcessedData {
+  [channel: string]: Point[]; 
 }
 
 interface MainGridProps {
@@ -39,8 +52,9 @@ interface MainGridProps {
   onLayoutChange: (layout: Layout[]) => void;
   ecgData: Point[]; 
   heartRateData: Point[]; 
-  // ✅ NOVO: Prop para os dados do acelerómetro
   accelerometerData: AccelerometerProcessedData | null; 
+  gyroscopeData: GyroscopeProcessedData | null; // NOVO: Prop para os dados do giroscópio
+  eegRawData: EegRawProcessedData; 
   onDisableSignal: (cardId: string) => void;
 }
 
@@ -56,8 +70,9 @@ const MainGrid: React.FC<MainGridProps> = ({
   onLayoutChange, 
   heartRateData,
   ecgData, 
-  // ✅ Recebe os dados do acelerómetro
   accelerometerData, 
+  gyroscopeData, // NOVO: Recebe os dados do giroscópio
+  eegRawData, 
   onDisableSignal
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -129,8 +144,7 @@ const MainGrid: React.FC<MainGridProps> = ({
       case 'ecg':
         return ecgData; 
       
-      case 'eeg':
-        // TODO - dados EEG
+      case 'eeg': 
         return [];
       
       default:
@@ -142,9 +156,10 @@ const MainGrid: React.FC<MainGridProps> = ({
     switch (signalType) {
       case 'hr': return "#e74c3c";
       case 'ecg': return "#27ae60";
-      case 'eeg': return "#8884d8";
-      case 'gyroscope': return "#f39c12";
-      case 'accelerometer': return "#9b59b6"; // ✅ Cor para acelerómetro
+      case 'eeg': return "#8884d8"; 
+      case 'eegRaw': return "#8884d8"; 
+      case 'gyroscope': return "#f39c12"; // Cor para giroscópio
+      case 'accelerometer': return "#9b59b6"; 
       case 'steering': return "#3498db";
       case 'speed': return "#e67e22";
       default: return "#95a5a6";
@@ -155,9 +170,10 @@ const MainGrid: React.FC<MainGridProps> = ({
     switch (signalType) {
       case 'hr': return "bpm";
       case 'ecg': return "mV";
-      case 'eeg': return "µV";
-      case 'gyroscope': return "deg/s";
-      case 'accelerometer': return "m/s²"; // ✅ Unidade para acelerómetro
+      case 'eeg': return "µV"; 
+      case 'eegRaw': return "µV"; 
+      case 'gyroscope': return "deg/s"; // Unidade para giroscópio
+      case 'accelerometer': return "m/s²"; 
       case 'steering': return "deg";
       case 'speed': return "km/h";
       default: return "";
@@ -173,7 +189,7 @@ const MainGrid: React.FC<MainGridProps> = ({
         rowHeight={gridProps.rowHeight}
         width={gridProps.width}
         margin={[GAP, GAP]}
-        isResizable={false}
+        isResizable={true}
         isDraggable={true}
         onLayoutChange={onLayoutChange}
       >
@@ -191,31 +207,44 @@ const MainGrid: React.FC<MainGridProps> = ({
                 <button 
                   onClick={() => onDisableSignal(item.id)}
                   className="text-xs text-red-500 hover:text-red-700"
-                  title="Disable signal"
+                  title="Desativar sinal"
                 >
-                  Disable
+                  Desativar
                 </button>
               </div>
               
               <div className="flex-1 p-2">
-                {/* ✅ Lógica condicional para renderizar o card correto */}
+                {/* Lógica condicional para renderizar o card correto */}
                 {item.signalType === 'accelerometer' ? (
                   <AccelerometerCard
-                    title="" // O título já está no header do card
+                    title="" 
                     data={accelerometerData}
-                    // Passar largura e altura que se ajustem ao grid
                     width={gridProps.width / gridProps.cols - GAP * 2}
-                    height={gridProps.rowHeight - 60} // Ajustar para o espaço disponível
+                    height={gridProps.rowHeight - 60} 
+                  />
+                ) : item.signalType === 'eegRaw' ? ( 
+                  <EegRawCard
+                    title=""
+                    data={eegRawData}
+                    unit={chartUnit}
+                    width={gridProps.width / gridProps.cols - GAP * 2}
+                    height={gridProps.rowHeight - 60}
+                  />
+                ) : item.signalType === 'gyroscope' ? ( // NOVO: Renderizar GyroscopeCard
+                  <GyroscopeCard
+                    title=""
+                    data={gyroscopeData} // Passa apenas os dados do giroscópio
+                    width={gridProps.width / gridProps.cols - GAP * 2}
+                    height={gridProps.rowHeight - 60} 
                   />
                 ) : (
                   <ChartCard 
                     title=""
                     color={chartColor}
-                    data={getChartData(item)} // Usa getChartData para ChartCard
+                    data={getChartData(item)} 
                     unit={chartUnit}
-                    // Passar largura e altura que se ajustem ao grid
                     width={gridProps.width / gridProps.cols - GAP * 2}
-                    height={gridProps.rowHeight - 60} // Ajustar para o espaço disponível
+                    height={gridProps.rowHeight - 60} 
                   />
                 )}
               </div>

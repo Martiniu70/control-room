@@ -1,12 +1,12 @@
 {
   "metadata": {
     "version": "1.0.0",
-    "timestamp": "2025-07-18T07:24:15.240313",
-    "saveOperation": 1
+    "timestamp": "2025-07-18T19:46:56.803769",
+    "saveOperation": 2
   },
   "signalControl": {
     "globalState": {
-      "timestamp": "2025-07-18T07:24:15.237957",
+      "timestamp": "2025-07-18T19:46:56.788514",
       "components": {
         "manager": {
           "state": "running",
@@ -30,18 +30,18 @@
               "eegRaw"
             ],
             "activeSignalsList": [
-              "accelerometer",
-              "gyroscope",
-              "ecg",
               "eegRaw",
-              "hr"
+              "gyroscope",
+              "accelerometer",
+              "hr",
+              "ecg"
             ],
             "inactiveSignalsList": [],
             "filtering": {
               "totalFiltered": 0,
               "filteringRate": 0.0
             },
-            "lastUpdate": "2025-07-18T07:24:15.237957"
+            "lastUpdate": "2025-07-18T19:46:56.788514"
           }
         },
         "processor": {
@@ -72,21 +72,21 @@
               "Cfg"
             ],
             "activeSignalsList": [
+              "CardioWheel_ACC",
+              "CardioWheel_ECG",
               "Cfg",
               "Timestamp",
-              "Polar_PPI",
-              "CardioWheel_ACC",
-              "Control",
-              "CardioWheel_GYR",
               "BrainAcess_EEG",
-              "CardioWheel_ECG"
+              "Polar_PPI",
+              "CardioWheel_GYR",
+              "Control"
             ],
             "inactiveSignalsList": [],
             "filtering": {
               "totalFiltered": 0,
               "filteringRate": 0.0
             },
-            "lastUpdate": "2025-07-18T07:24:15.237957"
+            "lastUpdate": "2025-07-18T19:46:56.788514"
           }
         },
         "listener": {
@@ -117,33 +117,33 @@
               "Cfg"
             ],
             "activeSignalsList": [
+              "CardioWheel_ACC",
+              "CardioWheel_ECG",
               "Cfg",
               "Timestamp",
-              "Polar_PPI",
-              "CardioWheel_ACC",
-              "Control",
-              "CardioWheel_GYR",
               "BrainAcess_EEG",
-              "CardioWheel_ECG"
+              "Polar_PPI",
+              "CardioWheel_GYR",
+              "Control"
             ],
             "inactiveSignalsList": [],
-            "lastUpdate": "2025-07-18T07:24:15.237957"
+            "lastUpdate": "2025-07-18T19:46:56.788514"
           }
         },
         "websocket": {
           "state": "running",
           "signals": {
-            "hr": "inactive",
-            "ecg": "inactive",
-            "accelerometer": "active",
+            "hr": "active",
+            "ecg": "active",
+            "accelerometer": "inactive",
             "gyroscope": "inactive",
             "eegRaw": "inactive"
           },
           "summary": {
             "componentState": "running",
             "totalSignals": 5,
-            "activeSignals": 1,
-            "inactiveSignals": 4,
+            "activeSignals": 2,
+            "inactiveSignals": 3,
             "availableSignals": [
               "hr",
               "ecg",
@@ -152,25 +152,25 @@
               "eegRaw"
             ],
             "activeSignalsList": [
-              "accelerometer"
+              "ecg",
+              "hr"
             ],
             "inactiveSignalsList": [
-              "hr",
-              "ecg",
+              "accelerometer",
               "gyroscope",
               "eegRaw"
             ],
             "filtering": {
-              "messagesFiltered": 554,
-              "anomaliesFiltered": 0,
-              "filteringRate": 1.0
+              "messagesFiltered": 27068,
+              "anomaliesFiltered": 1024,
+              "filteringRate": 0.9827185593958757
             },
             "connections": {
-              "activeConnections": 1,
+              "activeConnections": 3,
               "maxConnections": 10,
               "connectionEvents": 3
             },
-            "lastUpdate": "2025-07-18T07:24:15.237957"
+            "lastUpdate": "2025-07-18T19:46:56.788514"
           }
         },
         "publisher": {
@@ -196,20 +196,20 @@
             ],
             "activeSignalsList": [
               "CardioWheel_ACC",
-              "CardioWheel_GYR",
-              "BrainAcess_EEG",
               "CardioWheel_ECG",
-              "Polar_PPI"
+              "BrainAcess_EEG",
+              "Polar_PPI",
+              "CardioWheel_GYR"
             ],
             "inactiveSignalsList": [],
-            "lastUpdate": "2025-07-18T07:24:15.237957"
+            "lastUpdate": "2025-07-18T19:46:56.788514"
           }
         }
       },
       "globalSummary": {
         "totalComponents": 5,
         "totalSignals": 31,
-        "activeSignals": 27,
+        "activeSignals": 28,
         "componentStates": {
           "manager": "running",
           "processor": "running",
@@ -219,20 +219,20 @@
         }
       },
       "stats": {
-        "operationsExecuted": 1,
+        "operationsExecuted": 2,
         "batchOperationsExecuted": 0,
         "lastOperation": {
           "type": "enable_signal",
-          "signal": "accelerometer",
+          "signal": "hr",
           "component": "websocket",
-          "timestamp": "2025-07-18T07:24:15.237957",
+          "timestamp": "2025-07-18T19:46:56.787518",
           "results": {
             "websocket": true
           }
         },
         "totalComponents": 5,
         "errors": 0,
-        "startTime": "2025-07-18T07:24:09.498472"
+        "startTime": "2025-07-18T19:42:37.003911"
       }
     },
     "config": {

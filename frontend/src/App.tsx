@@ -26,12 +26,25 @@ interface AccProcessedData{
   timestamp: number;
 }
 
+// NOVO: Interface para os dados processados do giroscópio
+interface GyroProcessedData {
+  x: number[];
+  y: number[];
+  z: number[];
+  timestamp: number;
+}
+
+interface EegRawProcessedData {
+  [channel: string]: DataPoint[]; 
+}
+
 interface CardType {
   id: string;
   label: string;
   colSpan: number;
   rowSpan: number;
-  signalType: 'hr' | 'ecg' | 'eeg' | "gyroscope" | "accelerometer" | 'steering' | 'speed';
+  // ATUALIZADO: Adicionado 'gyroscope' ao SignalType
+  signalType: 'hr' | 'ecg' | 'eeg' | "gyroscope" | "accelerometer" | 'steering' | 'speed' | 'eegRaw'; 
   component: string;
   signalName: string;
 }
@@ -42,12 +55,11 @@ interface Tab {
 }
 
 function App() {
-  // WebSocket connection to backend
   const { 
     latestCardiacData,
     latestEegData, 
     latestUnityData, 
-    latestSensorData,
+    latestSensorData, // Inclui dados de sensores como giroscópio e acelerômetro
     connectionStatus, 
     recentAnomalies,
     connect,
@@ -65,22 +77,25 @@ function App() {
     disableSignal
   } = useSignalControl();
 
-  // Estados do componente
   const [modalOpen, setModalOpen] = useState(false);
   const startTimeRef = useRef<number>(Date.now());
   const [heartRateData, setHeartRateData] = useState<DataPoint[]>([]);
-  // Estado para armazenar os batches de ECG brutos recebidos
   const [ecgDataBatches, setEcgDataBatches] = useState<EcgBatch[]>([]);
   const [throttledEcgData, setThrottledEcgData] = useState<DataPoint[]>([]);
   const [latestAccelerometerData, setLatestAccelerometerData] = useState<AccProcessedData | null>(null);
+  // NOVO: Estado para armazenar os dados processados do giroscópio
+  const [latestGyroscopeData, setLatestGyroscopeData] = useState<GyroProcessedData | null>(null);
+  const [eegRawData, setEegRawData] = useState<EegRawProcessedData>({});
 
-  // Refs para controlar o throttling do ECG
   const lastEcgUpdateTimeRef = useRef(0);
   const ECG_THROTTLE_INTERVAL_MS = 1;
   const ECG_SAMPLE_RATE = 1000;
   const ECG_WINDOW_DURATION_SECONDS = 5;
-  
   const ECG_DOWNSAMPLING_FACTOR = 10;
+
+  const EEG_SAMPLE_RATE = 250; 
+  const EEG_WINDOW_DURATION_SECONDS = 5; 
+  const EEG_DOWNSAMPLING_FACTOR = 1; 
 
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, label: "Tab 1" }]);
   const [currentTabId, setCurrentTabId] = useState<number>(1);
@@ -97,7 +112,7 @@ function App() {
         x: currentTimeSeconds,
         value: latestCardiacData.hr.value
       };
-      setHeartRateData(prev => [...prev, newDataPoint].slice(-200)); // Manter histórico para HR
+      setHeartRateData(prev => [...prev, newDataPoint].slice(-200)); 
     }
   }, [latestCardiacData?.hr]);
 
@@ -109,16 +124,12 @@ function App() {
         timeSeconds : currentTimeSeconds,
         values: latestCardiacData.ecg.value
       };
-      // Manter um número suficiente de batches para a janela de visualização do ChartCard
-      // Ex: se o ChartCard mostra 5s de ECG a 200Hz, e cada batch tem 20 amostras (0.1s),
-      // precisamos de 50 batches. Manter 100 batches dá um bom buffer.
       const maxBatchesToKeep = 100; 
       setEcgDataBatches(prev => [...prev, newEcgBatch].slice(-maxBatchesToKeep));
     }
   }, [latestCardiacData?.ecg]);
 
   useEffect(() => {
-    // Função para achatar os batches de ECG em uma array de pontos plotáveis
     const flattenEcgBatches = (batches: EcgBatch[]): DataPoint[] => {
       const allPoints: DataPoint[] = [];
       const sampleDuration = 1 / ECG_SAMPLE_RATE;
@@ -141,16 +152,12 @@ function App() {
     };
 
     const now = Date.now();
-    // Aplica o throttling: só atualiza se o tempo de intervalo tiver passado
     if (now - lastEcgUpdateTimeRef.current > ECG_THROTTLE_INTERVAL_MS) {
       const newEcgPoints = flattenEcgBatches(ecgDataBatches);
       setThrottledEcgData(newEcgPoints);
       lastEcgUpdateTimeRef.current = now;
     }
-    // Se o tempo não passou, a atualização é ignorada até o próximo intervalo.
-    // Isso evita re-renderizações excessivas do gráfico.
-
-  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS, ECG_SAMPLE_RATE, ECG_WINDOW_DURATION_SECONDS, ECG_DOWNSAMPLING_FACTOR]); // Depende dos batches brutos e do intervalo de throttling
+  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS, ECG_SAMPLE_RATE, ECG_WINDOW_DURATION_SECONDS, ECG_DOWNSAMPLING_FACTOR]); 
 
   // useEffect para processar e aplicar throttling aos dados do acelerometro
   useEffect(() => {
@@ -170,6 +177,51 @@ function App() {
       }
     }
   }, [latestSensorData?.accelerometer]);
+
+  // NOVO: useEffect para processar os dados do giroscópio
+  useEffect(() => {
+    if(latestSensorData?.gyroscope?.value){
+      const gyro = latestSensorData.gyroscope.value.gyroscope;
+      // Assume que 'gyro.x', 'gyro.y', 'gyro.z' já são arrays
+      setLatestGyroscopeData({
+        x: gyro.x,
+        y: gyro.y,
+        z: gyro.z,
+        timestamp: latestSensorData.gyroscope.timestamp
+      });
+    }
+  }, [latestSensorData?.gyroscope]);
+
+
+  // NOVO: Efeito para processar os dados brutos do EEG
+  useEffect(() => {
+    if (latestEegData?.raw && typeof latestEegData.raw.value === 'object') {
+      const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
+      const eegRawValue = latestEegData.raw.value as { [key: string]: number[] };
+      const sampleDuration = 1 / EEG_SAMPLE_RATE;
+
+      setEegRawData(prev => {
+        const newEegRawData: EegRawProcessedData = { ...prev };
+        
+        Object.entries(eegRawValue).forEach(([channelName, values]) => {
+          if (Array.isArray(values)) {
+            const currentChannelData = newEegRawData[channelName] || [];
+            
+            const newPointsForChannel: DataPoint[] = values.map((val, index) => ({
+              x: currentTimeSeconds + (index * sampleDuration),
+              value: val
+            }));
+            
+            const combinedData = [...currentChannelData, ...newPointsForChannel];
+            const minTimeForWindow = currentTimeSeconds - EEG_WINDOW_DURATION_SECONDS;
+            
+            newEegRawData[channelName] = combinedData.filter(point => point.x >= minTimeForWindow);
+          }
+        });
+        return newEegRawData;
+      });
+    }
+  }, [latestEegData?.raw, EEG_SAMPLE_RATE, EEG_WINDOW_DURATION_SECONDS]);
 
   // Funcoes de manipulação de UI
   const updateLayout = (newLayout: Layout[]) => {
@@ -212,9 +264,10 @@ function App() {
   const labelMap: Record<CardType["signalType"], string> = {
     hr: "Heart Rate",
     ecg: "ECG",
-    eeg: "EEG",
-    gyroscope: "Gyro",
-    accelerometer: "Acc",
+    eeg: "EEG", 
+    eegRaw: "EEG Raw", 
+    gyroscope: "Gyroscope", // NOVO: Label para giroscópio
+    accelerometer: "Accelerometer",
     steering: "Steering",
     speed: "Speed"
   };
@@ -222,9 +275,10 @@ function App() {
   const addCard = (component: string, signalName: string) => {
     let signalType: CardType["signalType"] = "hr";
     if (signalName.includes("ecg")) signalType = "ecg";
+    else if (signalName.includes("eegRaw")) signalType = "eegRaw"; 
     else if (signalName.includes("eeg")) signalType = "eeg";
     else if (signalName.includes("accelerometer")) signalType = "accelerometer";
-    else if (signalName.includes("gyroscope")) signalType = "gyroscope";
+    else if (signalName.includes("gyroscope")) signalType = "gyroscope"; // NOVO: Lógica para giroscópio
     else if (signalName.includes("steering")) signalType = "steering";
     else if (signalName.includes("speed")) signalType = "speed";
 
@@ -249,13 +303,11 @@ function App() {
     }
   };
 
-  // Ao clicar no botão Add Card no Header, abrir modal
   const handleAddCardClick = () => {
     loadSignals();
     setModalOpen(true);
   };
 
-  // Quando o utilizador clicar num sinal dentro do modal
   const handleSignalSelect = (component: string, signalName: string) => {
     addCard(component, signalName)
     setModalOpen(false); 
@@ -265,34 +317,33 @@ function App() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Connection Status Bar */}
       <div className={`px-4 py-2 text-sm text-white ${
         connectionStatus.connected ? 'bg-green-600' : 
         connectionStatus.reconnecting ? 'bg-yellow-600' : 'bg-red-600'
       }`}>
         <div className="flex justify-between items-center">
           <span>
-            {connectionStatus.connected ? '🟢 Connected to Control Room Backend' :
-             connectionStatus.reconnecting ? '🟡 Reconnecting...' :
-             '🔴 Disconnected from Backend'}
+            {connectionStatus.connected ? '🟢 Conectado ao Backend da Sala de Controlo' :
+             connectionStatus.reconnecting ? '🟡 A reconectar...' :
+             '🔴 Desconectado do Backend'}
           </span>
           <div className="flex gap-2">
             {recentAnomalies.length > 0 && (
               <span className="bg-red-500 px-2 py-1 rounded text-xs">
-                ⚠️ {recentAnomalies.length} Anomalies
+                ⚠️ {recentAnomalies.length} Anomalias
               </span>
             )}
             <button 
               onClick={connectionStatus.connected ? disconnect : connect}
               className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs transition"
             >
-              {connectionStatus.connected ? 'Disconnect' : 'Reconnect'}
+              {connectionStatus.connected ? 'Desconectar' : 'Reconectar'}
             </button>
           </div>
         </div>
         {connectionStatus.error && (
           <div className="text-xs mt-1 opacity-90">
-            Error: {connectionStatus.error}
+            Erro: {connectionStatus.error}
           </div>
         )}
       </div>
@@ -315,6 +366,8 @@ function App() {
             heartRateData={heartRateData}
             ecgData={throttledEcgData}
             accelerometerData={latestAccelerometerData}
+            gyroscopeData={latestGyroscopeData} // NOVO: Passar dados do giroscópio
+            eegRawData={eegRawData}
             onDisableSignal={(cardId) => {
               const card = currentCards.find(c => c.id === cardId);
               if (card) {
@@ -325,7 +378,6 @@ function App() {
         </main>
       </div>
 
-      {/* Modal para seleção de sinais */}
       <SignalModal 
         open={modalOpen}
         availableSignals={availableSignals}
@@ -334,18 +386,18 @@ function App() {
         onSelect={handleSignalSelect}
       />
 
-      {/* DEBUG PANEL */}
       {process.env.NODE_ENV === 'development' && (
         <div className="bg-gray-800 text-white p-2 text-xs">
           <div className="flex gap-4">
-            <span>HR Points: {heartRateData.length}</span>
-            <span>Latest HR: {heartRateData[heartRateData.length - 1]?.value ?? 'N/A'} bpm</span>
-            <span>ECG Batches (Raw): {ecgDataBatches.length}</span>
-            <span>ECG Points (Throttled): {throttledEcgData.length}</span> {/* ✅ DEBUG para dados throttled */}
-            <span>Time Running: {((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s</span>
-            <span>Connected: {connectionStatus.connected ? 'Yes' : 'No'}</span>
-            <span>Anomalies: {recentAnomalies.length}</span>
-            <span>Signals Loading: {signalsLoading ? 'Yes' : 'No'}</span>
+            <span>Pontos HR: {heartRateData.length}</span>
+            <span>Último HR: {heartRateData[heartRateData.length - 1]?.value ?? 'N/A'} bpm</span>
+            <span>Batches ECG (Bruto): {ecgDataBatches.length}</span>
+            <span>Pontos ECG (Throttled): {throttledEcgData.length}</span>
+            <span>Pontos EEG Raw (ch0): {eegRawData['ch0']?.length ?? 0}</span> 
+            <span>Tempo de Execução: {((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s</span>
+            <span>Conectado: {connectionStatus.connected ? 'Sim' : 'Não'}</span>
+            <span>Anomalias: {recentAnomalies.length}</span>
+            <span>Sinais a Carregar: {signalsLoading ? 'Sim' : 'Não'}</span>
           </div>
         </div>
       )}

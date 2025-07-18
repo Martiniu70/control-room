@@ -1,12 +1,12 @@
 {
   "metadata": {
     "version": "1.0.0",
-    "timestamp": "2025-07-18T05:56:14.583233",
+    "timestamp": "2025-07-18T19:40:46.041820",
     "saveOperation": 1
   },
   "signalControl": {
     "globalState": {
-      "timestamp": "2025-07-18T05:56:14.581212",
+      "timestamp": "2025-07-18T19:40:46.041167",
       "components": {
         "manager": {
           "state": "running",
@@ -32,16 +32,16 @@
             "activeSignalsList": [
               "hr",
               "gyroscope",
-              "eegRaw",
+              "ecg",
               "accelerometer",
-              "ecg"
+              "eegRaw"
             ],
             "inactiveSignalsList": [],
             "filtering": {
               "totalFiltered": 0,
               "filteringRate": 0.0
             },
-            "lastUpdate": "2025-07-18T05:56:14.581212"
+            "lastUpdate": "2025-07-18T19:40:46.041167"
           }
         },
         "processor": {
@@ -72,21 +72,21 @@
               "Cfg"
             ],
             "activeSignalsList": [
-              "Polar_PPI",
-              "Timestamp",
               "CardioWheel_GYR",
               "Control",
-              "BrainAcess_EEG",
               "Cfg",
+              "BrainAcess_EEG",
               "CardioWheel_ACC",
-              "CardioWheel_ECG"
+              "Polar_PPI",
+              "CardioWheel_ECG",
+              "Timestamp"
             ],
             "inactiveSignalsList": [],
             "filtering": {
               "totalFiltered": 0,
               "filteringRate": 0.0
             },
-            "lastUpdate": "2025-07-18T05:56:14.581212"
+            "lastUpdate": "2025-07-18T19:40:46.041167"
           }
         },
         "listener": {
@@ -117,26 +117,26 @@
               "Cfg"
             ],
             "activeSignalsList": [
-              "Polar_PPI",
-              "Timestamp",
               "CardioWheel_GYR",
               "Control",
-              "BrainAcess_EEG",
               "Cfg",
+              "BrainAcess_EEG",
               "CardioWheel_ACC",
-              "CardioWheel_ECG"
+              "Polar_PPI",
+              "CardioWheel_ECG",
+              "Timestamp"
             ],
             "inactiveSignalsList": [],
-            "lastUpdate": "2025-07-18T05:56:14.581212"
+            "lastUpdate": "2025-07-18T19:40:46.041167"
           }
         },
         "websocket": {
           "state": "running",
           "signals": {
             "hr": "inactive",
-            "ecg": "active",
+            "ecg": "inactive",
             "accelerometer": "inactive",
-            "gyroscope": "inactive",
+            "gyroscope": "active",
             "eegRaw": "inactive"
           },
           "summary": {
@@ -152,25 +152,25 @@
               "eegRaw"
             ],
             "activeSignalsList": [
-              "ecg"
+              "gyroscope"
             ],
             "inactiveSignalsList": [
               "hr",
+              "ecg",
               "accelerometer",
-              "gyroscope",
               "eegRaw"
             ],
             "filtering": {
-              "messagesFiltered": 909,
-              "anomaliesFiltered": 5,
+              "messagesFiltered": 6163,
+              "anomaliesFiltered": 293,
               "filteringRate": 1.0
             },
             "connections": {
-              "activeConnections": 1,
+              "activeConnections": 3,
               "maxConnections": 10,
               "connectionEvents": 3
             },
-            "lastUpdate": "2025-07-18T05:56:14.581212"
+            "lastUpdate": "2025-07-18T19:40:46.041167"
           }
         },
         "publisher": {
@@ -197,12 +197,12 @@
             "activeSignalsList": [
               "CardioWheel_GYR",
               "Polar_PPI",
-              "BrainAcess_EEG",
               "CardioWheel_ACC",
+              "BrainAcess_EEG",
               "CardioWheel_ECG"
             ],
             "inactiveSignalsList": [],
-            "lastUpdate": "2025-07-18T05:56:14.581212"
+            "lastUpdate": "2025-07-18T19:40:46.041167"
           }
         }
       },
@@ -223,16 +223,16 @@
         "batchOperationsExecuted": 0,
         "lastOperation": {
           "type": "enable_signal",
-          "signal": "ecg",
+          "signal": "gyroscope",
           "component": "websocket",
-          "timestamp": "2025-07-18T05:56:14.581212",
+          "timestamp": "2025-07-18T19:40:46.041167",
           "results": {
             "websocket": true
           }
         },
         "totalComponents": 5,
         "errors": 0,
-        "startTime": "2025-07-18T05:56:05.459098"
+        "startTime": "2025-07-18T19:39:47.042949"
       }
     },
     "config": {
