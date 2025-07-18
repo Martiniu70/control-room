@@ -15,7 +15,8 @@ from .generators import (
     cardioWheelEcgGenerator, CardioWheelEcgGenerator,
     cardioWheelAccGenerator, CardioWheelAccGenerator,
     cardioWheelGyrGenerator, CardioWheelGyrGenerator,
-    polarPpiGenerator, PolarPpiGenerator
+    polarPpiGenerator, PolarPpiGenerator,
+    brainAccessEegGenerator, BrainAccessEegGenerator
 )
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "cardioWheelEcgGenerator", "CardioWheelEcgGenerator",
     "cardioWheelAccGenerator", "CardioWheelAccGenerator",
     "cardioWheelGyrGenerator", "CardioWheelGyrGenerator",
-    "polarPpiGenerator", "PolarPpiGenerator"
+    "polarPpiGenerator", "PolarPpiGenerator",
+    "brainAccessEegGenerator", "BrainAccessEegGenerator"
 ]

@@ -23,7 +23,8 @@ from .generators import (
     cardioWheelEcgGenerator, CardioWheelEcgGenerator,
     cardioWheelAccGenerator, CardioWheelAccGenerator,
     cardioWheelGyrGenerator, CardioWheelGyrGenerator,
-    polarPpiGenerator, PolarPpiGenerator
+    polarPpiGenerator, PolarPpiGenerator,
+    brainAccessEegGenerator, BrainAccessEegGenerator
 )
 
 class ControllerState(Enum):
@@ -59,7 +60,8 @@ class MockZeroMQController(SignalControlInterface):
             "Polar_PPI": polarPpiGenerator,
             "CardioWheel_ECG": cardioWheelEcgGenerator,
             "CardioWheel_ACC": cardioWheelAccGenerator,
-            "CardioWheel_GYR": cardioWheelGyrGenerator
+            "CardioWheel_GYR": cardioWheelGyrGenerator,
+            "BrainAcess_EEG": brainAccessEegGenerator
         }
         
         # Configurações de frequência por tópico

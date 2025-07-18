@@ -266,11 +266,11 @@ class MockZeroMQConfig:
             "minInterval": 10.0,                   # Segundos mínimos entre anomalias
             "maxAnomaliesPerMinute": 3,            # Máximo de anomalias por minuto
             "topicChances": {                      # Chances específicas por tópico
-                "Polar_PPI": 0.05,                # 5% chance para HR
-                "CardioWheel_ECG": 0.03,           # 3% chance para ECG
-                "CardioWheel_ACC": 0.04,           # 4% chance para ACC
-                "CardioWheel_GYR": 0.04,           # 4% chance para GYR
-                "BrainAcess_EEG": 0.03             # 3% chance para EEG
+                "Polar_PPI": 0.05,                 # 5% chance para HR
+                "CardioWheel_ECG": 0,        # 0.005% chance para ECG
+                "CardioWheel_ACC": 0.0005,         # 0.05% chance para ACC
+                "CardioWheel_GYR": 0.0005,         # 0.05% chance para GYR
+                "BrainAcess_EEG": 0.0002           # 0.02% chance para EEG
             }
         }
         
@@ -746,7 +746,7 @@ class SignalControlConfig:
             # Componentes que trabalham com tópicos ZeroMQ
             "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
             "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
-            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"] ← CORRIGIDO!
+            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"] 
             
             # Componentes que trabalham com signal types
             "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
