@@ -17,6 +17,7 @@ from datetime import datetime
 from ..models.signals.cardiacSignal import CardiacSignal
 from ..models.signals.eegSignal import EEGSignal
 from ..models.signals.sensorSignal import SensorsSignal
+from ..models.signals.cameraSignal import CameraSignal
 from ..models.base import SignalPoint
 from ..core import eventManager, settings
 from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
@@ -31,25 +32,28 @@ class SignalManager(SignalControlInterface):
         self.signals: Dict[str, Any] = {
             "cardiac": CardiacSignal(),
             "eeg": EEGSignal(),
-            "sensors": SensorsSignal()
+            "sensors": SensorsSignal(),
+            "camera": CameraSignal()
         }
         
         # Mapeamento de data types por sinal 
         self.dataTypeMappings = {
             "cardiac": ["ecg", "hr"],
             "eeg": ["eegRaw", "eegBands"],
-            "sensors": ["accelerometer", "gyroscope"]
+            "sensors": ["accelerometer", "gyroscope"],
+            "camera": ["faceLandmarks"]
         }
         
         # Signal Control properties
-        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
         self.activeSignals: Set[str] = set(self.availableSignals)  # Todos ativos por default
         
         # Mapeamento de métodos específicos de status por sinal
         self.statusMethods = {
             "cardiac": "getCardiacStatus",
             "eeg": "getEegStatus",
-            "sensors": "getSensorsStatus"
+            "sensors": "getSensorsStatus",
+            "camera": "getCameraStatus"
         }
         
         # Estatísticas do manager
@@ -222,6 +226,15 @@ class SignalManager(SignalControlInterface):
                 },
                 "gyroscope": {
                     "x": [val1, val2, ...], "y": [...], "z": [...]
+                },
+                
+                # Camera
+                "faceLandmarks": {
+                    "landmarks": [[x1,y1,z1], [x2,y2,z2], ...],
+                    "gaze_vector": {"dx": 0.2, "dy": -0.1},
+                    "ear": 0.25,
+                    "blink_rate": 18,
+                    "confidence": 0.85
                 }
             }
         }
@@ -282,6 +295,17 @@ class SignalManager(SignalControlInterface):
                     errors.append(f"Sensors processing failed: {e}")
                     overallSuccess = False
             
+            # Processar dados de câmera
+            if "faceLandmarks" in data:
+                try:
+                    cameraSuccess = await self._processCameraData(data, timestamp)
+                    overallSuccess = overallSuccess and cameraSuccess
+                    if cameraSuccess:
+                        processedCount += 1
+                except Exception as e:
+                    errors.append(f"Camera processing failed: {e}")
+                    overallSuccess = False
+            
             # Verificar se processamos alguma coisa
             if processedCount > 0:
                 self.logger.debug(f"Successfully processed {processedCount} signal types from {source}")
@@ -301,7 +325,29 @@ class SignalManager(SignalControlInterface):
             self.logger.error(f"Error processing ZeroMQ data: {e}")
             self.stats["totalErrors"] += 1
             return False
-    
+
+    async def _processCameraData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
+        """Processa dados de câmera específicos com validação e filtering"""
+        success = True
+        
+        # Processar Face Landmarks se presente
+        if "faceLandmarks" in data:
+            try:
+                cameraSuccess = await self.addSignalData(
+                    signalType="camera",
+                    dataType="faceLandmarks",
+                    value=data["faceLandmarks"],
+                    timestamp=timestamp
+                )
+                success = success and cameraSuccess
+                if not cameraSuccess:
+                    self.logger.warning(f"Failed to process face landmarks data")
+            except Exception as e:
+                self.logger.error(f"Error processing face landmarks data: {e}")
+                success = False
+        
+        return success
+  
     async def _processCardiacData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
         """Processa dados cardíacos específicos com validação e filtering"""
         success = True
@@ -680,6 +726,29 @@ class SignalManager(SignalControlInterface):
             anomaly_type = "instability"
             threshold = settings.signals.sensorsConfig["gyroscope"]["instabilityThreshold"]
         
+        # Detectar tipo de anomalia camera
+        elif "piscadelas" in message_lower and "baixa" in message_lower:
+            anomaly_type = "low_blink_rate"
+            threshold = settings.signals.cameraConfig["blinkRate"]["drowsinessThreshold"]
+        elif "piscadelas" in message_lower and "excessiva" in message_lower:
+            anomaly_type = "high_blink_rate"
+            threshold = settings.signals.cameraConfig["blinkRate"]["hyperBlinkThreshold"]
+        elif "ear" in message_lower and "baixo" in message_lower:
+            anomaly_type = "low_ear"
+            threshold = settings.signals.cameraConfig["ear"]["drowsyThreshold"]
+        elif "confiança" in message_lower and "baixa" in message_lower:
+            anomaly_type = "low_detection_confidence"
+            threshold = settings.signals.cameraConfig["faceLandmarks"]["detectionThreshold"]
+        elif "olhar" in message_lower and "desviado" in message_lower:
+            anomaly_type = "gaze_drift"
+            threshold = 0.7  # Valor hardcoded na detecção
+        elif "movimento" in message_lower and "errático" in message_lower:
+            anomaly_type = "erratic_gaze"
+            threshold = settings.signals.cameraConfig["gaze"]["stabilityThreshold"]
+        elif "variação" in message_lower and "ear" in message_lower:
+            anomaly_type = "ear_instability"
+            threshold = 0.2  # Valor hardcoded na detecção
+        
         else:
             anomaly_type = "unknown"
             threshold = None
@@ -692,24 +761,26 @@ class SignalManager(SignalControlInterface):
             "severity": severity,
             "threshold": threshold
         }
-    
+        
     def _classifyAnomalySeverity(self, anomalyMessage: str) -> str:
         """Classifica severidade de anomalia"""
         message = anomalyMessage.lower()
         
         # Crítico
         if any(word in message for word in [
-            "severe", "crítico", "saturação", "solto", "muito baixa", "muito alta",
+            "severe", "crítico", "crítica", "saturação", "solto", "muito baixa", "muito alta",
             "error", "failed", "connection", "timeout", "impacto", "spin", "derrapagem",
-            "emergência", "travagem"
+            "emergência", "travagem", "sonolência crítica", "confiança baixa", "qualidade alta"
         ]):
             return "critical"
         
         # Aviso
         elif any(word in message for word in [
-            "moderate", "alta", "súbita", "dominância", "excessiva", "warning",
+            "moderate", "moderada", "alta", "súbita", "dominância", "excessiva", "warning",
             "drift", "artefacto", "movimento", "variabilidade", "brusco", "rápida",
-            "agressiva", "vibração", "rotação", "instabilidade"
+            "agressiva", "vibração", "rotação", "instabilidade", "sonolência moderada",
+            "piscadelas baixa", "piscadelas excessiva", "olhar desviado", "errático",
+            "qualidade moderada"
         ]):
             return "warning"
         

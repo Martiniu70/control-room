@@ -24,7 +24,8 @@ from .generators import (
     cardioWheelAccGenerator, CardioWheelAccGenerator,
     cardioWheelGyrGenerator, CardioWheelGyrGenerator,
     polarPpiGenerator, PolarPpiGenerator,
-    brainAccessEegGenerator, BrainAccessEegGenerator
+    brainAccessEegGenerator, BrainAccessEegGenerator,
+    cameraFaceLandmarksGenerator, CameraFaceLandmarksGenerator
 )
 
 class ControllerState(Enum):
@@ -61,7 +62,8 @@ class MockZeroMQController(SignalControlInterface):
             "CardioWheel_ECG": cardioWheelEcgGenerator,
             "CardioWheel_ACC": cardioWheelAccGenerator,
             "CardioWheel_GYR": cardioWheelGyrGenerator,
-            "BrainAcess_EEG": brainAccessEegGenerator
+            "BrainAcess_EEG": brainAccessEegGenerator,
+            "Camera_FaceLandmarks": cameraFaceLandmarksGenerator
         }
         
         # Configurações de frequência por tópico
@@ -413,8 +415,10 @@ class MockZeroMQController(SignalControlInterface):
             # Gerar dados baseado no tipo de gerador
             if topic == "Polar_PPI":
                 rawData = generator.generateEvent()
+            elif topic == "Camera_FaceLandmarks": 
+                rawData = generator.generateFrame()
             else:
-                # ECG, ACC, GYR usam chunks
+                # ECG, ACC, GYR, EEG usam chunks
                 rawData = generator.generateChunk()
             
             # Formatar dados para ZeroMQ

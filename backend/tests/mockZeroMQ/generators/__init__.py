@@ -16,11 +16,13 @@ from .cardioWheelAccGenerator import cardioWheelAccGenerator, CardioWheelAccGene
 from .cardioWheelGyrGenerator import cardioWheelGyrGenerator, CardioWheelGyrGenerator
 from .polarPpiGenerator import polarPpiGenerator, PolarPpiGenerator
 from .brainAccessEegGenerator import brainAccessEegGenerator, BrainAccessEegGenerator
+from .cameraFaceLandMarksGenerator import cameraFaceLandmarksGenerator, CameraFaceLandmarksGenerator
 
 __all__ = [
     "cardioWheelEcgGenerator", "CardioWheelEcgGenerator",
     "cardioWheelAccGenerator", "CardioWheelAccGenerator", 
     "cardioWheelGyrGenerator", "CardioWheelGyrGenerator",
     "polarPpiGenerator", "PolarPpiGenerator",
-    "brainAccessEegGenerator", "BrainAccessEegGenerator"
+    "brainAccessEegGenerator", "BrainAccessEegGenerator",
+    "cameraFaceLandmarksGenerator", "CameraFaceLandmarksGenerator"
 ]
