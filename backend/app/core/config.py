@@ -39,6 +39,7 @@ class ZeroMQConfig:
             "CardioWheel_ACC",     # Acelerómetro do CardioWheel
             "CardioWheel_GYR",     # Giroscópio do CardioWheel
             "BrainAcess_EEG",      # EEG do BrainAccess Halo
+            "Camera_FaceLandmarks", # Face landmarks e gaze da câmera
             "Control",             # Sinais de controlo
             "Timestamp",           # Timestamps do sistema
             "Cfg"                  # Configurações dos dispositivos
@@ -51,6 +52,7 @@ class ZeroMQConfig:
             "CardioWheel_ACC": ["accelerometer"],
             "CardioWheel_GYR": ["gyroscope"],
             "BrainAcess_EEG": ["eegRaw"],
+            "Camera_FaceLandmarks": ["faceLandmarks"],
             "Control": ["system"],
             "Timestamp": ["system"],
             "Cfg": ["system"]
@@ -63,6 +65,7 @@ class ZeroMQConfig:
             "CardioWheel_ACC": "INFO", # Só avisos para acelerómetro
             "CardioWheel_GYR": "WARNING", # Só avisos para giroscópio  
             "BrainAcess_EEG": "INFO",   # Log normal para EEG
+            "Camera_FaceLandmarks": "INFO", # Log normal para câmera
             "Control": "INFO",          # Log normal para controlo
             "Timestamp": "WARNING",     # Só avisos para timestamps
             "Cfg": "INFO"               # Log normal para configurações
@@ -96,6 +99,7 @@ class ZeroMQConfig:
             "CardioWheel_ACC": {"signalType": "sensors", "dataType": "accelerometer"},
             "CardioWheel_GYR": {"signalType": "sensors", "dataType": "gyroscope"},
             "BrainAcess_EEG": {"signalType": "eeg", "dataType": "eegRaw"},
+            "Camera_FaceLandmarks": {"signalType": "camera", "dataType": "faceLandmarks"},
             "Control": {"signalType": "system", "dataType": "control"},
             "Timestamp": {"signalType": "system", "dataType": "timestamp"},
             "Cfg": {"signalType": "system", "dataType": "config"}
@@ -133,6 +137,18 @@ class ZeroMQConfig:
                 "expectedChunkSize": 10,            # Pontos por chunk típico
                 "timestampIncrement": 0.004,        # 4ms por sample (1/250Hz)
                 "timestampUnit": "seconds"
+            },
+            "Camera_FaceLandmarks": {
+                "samplingRate": 0.5,                # 0.5Hz - dados a cada 2 segundos como real
+                "expectedChunkSize": 1,             # 1 frame por chunk
+                "timestampIncrement": 2.0,          # 2s entre frames
+                "landmarksCount": 478,              # Pontos de landmarks faciais
+                "landmarksDimensions": 3,           # x, y, z por ponto
+                "timestampUnit": "seconds",
+                "frameFormat": "base64",            # Formato da imagem
+                "gazeDimensions": 2,                # dx, dy para gaze vector
+                "earRange": (0.1, 0.4),            # Range normal para Eye Aspect Ratio
+                "blinkRateRange": (10, 30)          # Range normal para blink rate (por minuto)
             },
             "Control": {
                 "expectedFrequency": 0.1,           # Mensagens ocasionais - TODO averiguar utilidade
@@ -201,6 +217,18 @@ class ZeroMQConfig:
                     "Z": (-32768, 32767)
                 }
             },
+            "Camera_FaceLandmarks": {
+                "requiredFields": ["ts", "labels", "data"],
+                "optionalFields": [],
+                "expectedLabels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
+                "valueRanges": {
+                    "gaze_dx": (-1.0, 1.0),         # Range normalizado para direção do olhar
+                    "gaze_dy": (-1.0, 1.0),         # Range normalizado para direção do olhar
+                    "ear": (0.05, 0.5),             # Eye Aspect Ratio
+                    "blink_rate": (0, 60),          # Blinks por minuto
+                    "confidence": (0.0, 1.0)        # Confiança da deteção
+                }
+            },
             "Control": {
                 "requiredFields": ["ts"],           # TODO averiguar campos necessários
                 "optionalFields": ["labels", "data", "*"]  # Aceitar qualquer campo por enquanto
@@ -242,6 +270,7 @@ class MockZeroMQConfig:
             "CardioWheel_ACC": 10.0,               # 10Hz - chunks de acelerómetro (100Hz real / 10 samples por chunk)
             "CardioWheel_GYR": 10.0,               # 10Hz - chunks de giroscópio (100Hz real / 10 samples por chunk)
             "BrainAcess_EEG": 25.0,                # 25Hz - chunks de EEG (250Hz real / 10 samples por chunk)
+            "Camera_FaceLandmarks": 0.5,           # 0.5Hz - dados a cada 2s como real
             "Control": 0.1,                        # 0.1Hz - mensagens de controlo ocasionais
             "Timestamp": 0.2,                      # 0.2Hz - timestamps ocasionais
             "Cfg": 0.05                            # 0.05Hz - configurações raras
@@ -254,6 +283,7 @@ class MockZeroMQConfig:
             "CardioWheel_ACC": 10,                 # 10 samples ACC por chunk (100ms @ 100Hz)
             "CardioWheel_GYR": 10,                 # 10 samples GYR por chunk (100ms @ 100Hz)
             "BrainAcess_EEG": 10,                  # 10 samples EEG por chunk (40ms @ 250Hz)
+            "Camera_FaceLandmarks": 1,             # 1 frame por chunk
             "Control": 1,                          # 1 mensagem de controlo
             "Timestamp": 1,                        # 1 timestamp
             "Cfg": 1                               # 1 configuração
@@ -267,10 +297,11 @@ class MockZeroMQConfig:
             "maxAnomaliesPerMinute": 3,            # Máximo de anomalias por minuto
             "topicChances": {                      # Chances específicas por tópico
                 "Polar_PPI": 0.05,                 # 5% chance para HR
-                "CardioWheel_ECG": 0,        # 0.005% chance para ECG
+                "CardioWheel_ECG": 0,              # 0.005% chance para ECG
                 "CardioWheel_ACC": 0.0005,         # 0.05% chance para ACC
                 "CardioWheel_GYR": 0.0005,         # 0.05% chance para GYR
-                "BrainAcess_EEG": 0.0002           # 0.02% chance para EEG
+                "BrainAcess_EEG": 0.0002,          # 0.02% chance para EEG
+                "Camera_FaceLandmarks": 0.05       # 5  % chance para câmera
             }
         }
         
@@ -333,7 +364,7 @@ class MockZeroMQConfig:
         # Configurações de performance e limites
         self.performanceConfig = {
             "maxMessagesPerSecond": 200,           # Limite global de mensagens/segundo
-            "maxMessageSize": 10240,               # Tamanho máximo da mensagem (10KB)
+            "maxMessageSize": 20240,               # Tamanho máximo da mensagem (20KB)
             "bufferSize": 1000,                    # Tamanho do buffer de envio
             "batchSendEnabled": False,             # Envio em lote (para otimização futura)
             "compressionEnabled": False,           # Compressão de mensagens (para otimização futura)
@@ -499,28 +530,47 @@ class SignalConfig:
             }
         }
         
-        # TODO Configurações câmera
         self.cameraConfig = {
-            "videoStream": {
-                "fps": 30, 
-                "bufferSize": 900,
-                "resolution": (640, 480),           # Resolução padrão
-                "qualityThreshold": 0.7             # Qualidade mínima para processamento
+            "faceLandmarks": {
+                "fps": 0.5,                     # 0.5Hz - dados a cada 2s como real
+                "bufferSize": 15,               # 30s * 0.5Hz = 15 frames
+                "landmarksCount": 478,          # Pontos MediaPipe
+                "landmarksDimensions": 3,       # x, y, z
+                "normalizedCoords": True,       # Coordenadas 0-1
+                "detectionThreshold": 0.5,      # Confiança mínima
+                "stabilityThreshold": 0.02      # Movimento máximo entre frames (normalizado)
             },
-            "landmarks": {
-                "dimensions": 1434,                 # 478 pontos * 3 coordenadas
-                "bufferSize": 900,
-                "detectionThreshold": 0.5,          # Confiança mínima para landmarks
-                "stabilityThreshold": 10.0          # Pixels - movimento máximo entre frames
+            "gaze": {
+                "samplingRate": 0.5,            # 0.5Hz - consistente com face landmarks
+                "bufferSize": 15,               # 30s * 0.5Hz = 15 dados
+                "normalRange": (-1.0, 1.0),     # Range normalizado
+                "stabilityThreshold": 0.1,      # Mudança máxima entre frames
+                "centerDeadzone": 0.05          # Zona morta central
             },
             "blinkRate": {
-                "samplingRate": "event", 
-                "bufferSize": 100,
-                "normalRange": (10, 30),            # Blinks por minuto
-                "drowsinessThreshold": 5            # <5 blinks/min = sonolência
+                "samplingRate": "event",        # Eventos imediatos quando detectados
+                "bufferSize": 100,              # Últimos 100 blinks
+                "normalRange": (10, 30),        # Blinks por minuto
+                "drowsinessThreshold": 8,       # <8 blinks/min = sonolência
+                "hyperBlinkThreshold": 40       # >40 blinks/min = stress/irritação
+            },
+            "ear": {
+                "samplingRate": 0.5,            # 0.5Hz - consistente com landmarks
+                "bufferSize": 15,               # 30s * 0.5Hz = 15 dados
+                "normalRange": (0.15, 0.4),     # Eye Aspect Ratio normal
+                "blinkThreshold": 0.12,         # Abaixo disto = olho fechado
+                "drowsyThreshold": 0.18         # Abaixo disto por tempo = sonolência
+            },
+            "videoStream": {
+                "fps": 0.5,                     # 0.5Hz - consistente com sistema
+                "bufferSize": 15,               # 30s de frames
+                "resolution": (640, 480),       # Resolução padrão
+                "qualityThreshold": 0.7,        # Qualidade mínima para processamento
+                "frameFormat": "jpeg",          # Formato de compressão
+                "frameQuality": 85              # Qualidade JPEG (0-100)
             }
         }
-        
+                
         # TODO Configurações Unity
         self.unityConfig = {
             "steering": {
@@ -735,7 +785,8 @@ class SignalControlConfig:
             "CardioWheel_ECG": "ecg",             # ECG do CardioWheel
             "CardioWheel_ACC": "accelerometer",   # Acelerómetro do CardioWheel
             "CardioWheel_GYR": "gyroscope",       # Giroscópio do CardioWheel
-            "BrainAcess_EEG": "eegRaw"            # EEG raw do BrainAccess
+            "BrainAcess_EEG": "eegRaw",            # EEG raw do BrainAccess
+            "Camera_FaceLandmarks": "faceLandmarks"  # Face landmarks da câmera
         }
 
         # Listas derivadas do mapeamento

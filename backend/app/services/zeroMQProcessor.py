@@ -39,7 +39,7 @@ import numpy as np
 
 from ..core import settings, eventManager
 from ..core.exceptions import ZeroMQProcessingError, TopicValidationError, UnknownTopicError
-from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
+from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager  
 
 class ZeroMQProcessor(SignalControlInterface):
     """Processador de dados ZeroMQ para conversão e formatação com controlo de sinais"""
@@ -339,6 +339,7 @@ class ZeroMQProcessor(SignalControlInterface):
             "CardioWheel_ACC": self._processCardioWheelACC,
             "CardioWheel_GYR": self._processCardioWheelGYR,
             "BrainAcess_EEG": self._processBrainAccessEEG,
+            "Camera_FaceLandmarks": self._processCameraFaceLandmarks,
             "Control": self._processSystemControl,
             "Timestamp": self._processSystemTimestamp,
             "Cfg": self._processSystemConfig
@@ -355,6 +356,154 @@ class ZeroMQProcessor(SignalControlInterface):
             )
         
         return await processor(data)
+    
+    async def _processCameraFaceLandmarks(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Processa dados de face landmarks da câmera.
+        Converte formato ZeroMQ para estrutura esperada pelo SignalManager.
+        
+        FORMATO INPUT ZeroMQ:
+        {
+            "ts": "timestamp",
+            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
+            "data": [[flattened_landmarks, gaze_dx, gaze_dy, ear, blink_rate, confidence]]
+        }
+        
+        FORMATO OUTPUT SignalManager:
+        {
+            "signalType": "camera",
+            "dataType": "faceLandmarks", 
+            "timestamp": timestamp,
+            "value": {
+                "landmarks": [[x1,y1,z1], [x2,y2,z2], ...],  # 478x3
+                "gaze_vector": {"dx": 0.2, "dy": -0.1},
+                "ear": 0.25,
+                "blink_rate": 18,
+                "confidence": 0.85
+            }
+        }
+        
+        Args:
+            data: Dados formatados do tópico Camera_FaceLandmarks
+            
+        Returns:
+            Dados processados para SignalManager ou None se inválidos
+        """
+        
+        try:
+            # Extrair timestamp
+            timestamp = float(data.get("ts", 0))
+            
+            # Extrair dados das labels/data
+            labels = data.get("labels", [])
+            dataArray = data.get("data", [])
+            
+            if not dataArray or len(dataArray) == 0:
+                self.logger.warning(f"Empty data array in Camera_FaceLandmarks")
+                return None
+            
+            # Processar primeira linha de dados (formato ZeroMQ sempre tem uma linha)
+            firstRow = dataArray[0]
+            
+            if len(firstRow) != len(labels):
+                self.logger.error(f"Data row length ({len(firstRow)}) doesn't match labels length ({len(labels)})")
+                return None
+            
+            # Inicializar estrutura de saída
+            processedData = {
+                "landmarks": None,
+                "gaze_vector": {},
+                "ear": None,
+                "blink_rate": None,
+                "confidence": None
+            }
+            
+            # Mapear dados baseado nas labels
+            for i, label in enumerate(labels):
+                if i >= len(firstRow):
+                    continue
+                    
+                if label == "landmarks":
+                    # Landmarks são array flattened [x1,y1,z1,x2,y2,z2,...]
+                    landmarksFlat = firstRow[i]
+                    if isinstance(landmarksFlat, list) and len(landmarksFlat) == 1434:  # 478 * 3
+                        # Reshape para [[x1,y1,z1], [x2,y2,z2], ...]
+                        landmarks = []
+                        for j in range(0, len(landmarksFlat), 3):
+                            landmarks.append([
+                                landmarksFlat[j],      # x
+                                landmarksFlat[j+1],    # y
+                                landmarksFlat[j+2]     # z
+                            ])
+                        processedData["landmarks"] = landmarks
+                    else:
+                        self.logger.warning(f"Invalid landmarks length: expected 1434, got {len(landmarksFlat) if isinstance(landmarksFlat, list) else 'not list'}")
+                        return None
+                        
+                elif label == "gaze_dx":
+                    processedData["gaze_vector"]["dx"] = float(firstRow[i])
+                elif label == "gaze_dy":  
+                    processedData["gaze_vector"]["dy"] = float(firstRow[i])
+                elif label == "ear":
+                    processedData["ear"] = float(firstRow[i])
+                elif label == "blink_rate":
+                    processedData["blink_rate"] = float(firstRow[i])
+                elif label == "confidence":
+                    processedData["confidence"] = float(firstRow[i])
+            
+            # Validações básicas de integridade
+            if processedData["landmarks"] is None:
+                self.logger.warning(f"Missing landmarks in Camera_FaceLandmarks")
+                return None
+                
+            if not processedData["gaze_vector"] or "dx" not in processedData["gaze_vector"] or "dy" not in processedData["gaze_vector"]:
+                self.logger.warning(f"Missing gaze vector components in Camera_FaceLandmarks")
+                return None
+                
+            if any(val is None for val in [processedData["ear"], processedData["blink_rate"], processedData["confidence"]]):
+                self.logger.warning(f"Missing required fields in Camera_FaceLandmarks")
+                return None
+            
+            # Validações de range básicas
+            if not (0.0 <= processedData["ear"] <= 1.0):
+                self.logger.warning(f"EAR out of range: {processedData['ear']}")
+                return None
+                
+            if not (0 <= processedData["blink_rate"] <= 120):
+                self.logger.warning(f"Blink rate out of range: {processedData['blink_rate']}")
+                return None
+                
+            if not (0.0 <= processedData["confidence"] <= 1.0):
+                self.logger.warning(f"Confidence out of range: {processedData['confidence']}")
+                return None
+            
+            # Validar gaze vector range
+            dx = processedData["gaze_vector"]["dx"]
+            dy = processedData["gaze_vector"]["dy"]
+            if not (-1.0 <= dx <= 1.0 and -1.0 <= dy <= 1.0):
+                self.logger.warning(f"Gaze vector out of range: ({dx:.2f}, {dy:.2f})")
+                return None
+            
+            # Estrutura final para SignalManager
+            signalMapping = self.topicSignalMapping["Camera_FaceLandmarks"]
+            
+            return {
+                "timestamp": timestamp,
+                "source": "camera",
+                "signalType": signalMapping["signalType"],  # "camera"
+                "dataType": signalMapping["dataType"],      # "faceLandmarks"
+                "data": {
+                    "faceLandmarks": processedData  # Wrap para SignalManager
+                }
+            }
+            
+        except Exception as e:
+            raise ZeroMQProcessingError(
+                topic="Camera_FaceLandmarks",
+                operation="camera_processing",
+                reason=str(e),
+                rawData=data
+            )
     
     async def _processPolarPPI(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """

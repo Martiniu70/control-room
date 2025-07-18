@@ -39,6 +39,7 @@ class ZeroMQFormatter:
             "CardioWheel_ACC": self._formatCardioWheelACC,
             "CardioWheel_GYR": self._formatCardioWheelGYR,
             "BrainAcess_EEG": self._formatBrainAccessEEG,
+            "Camera_FaceLandmarks": self._formatCameraFaceLandmarks,
             "Control": self._formatSystemControl,
             "Timestamp": self._formatSystemTimestamp,
             "Cfg": self._formatSystemConfig
@@ -121,6 +122,94 @@ class ZeroMQFormatter:
                 rawData=rawData
             )
     
+    def _formatCameraFaceLandmarks(self, rawData: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+        """
+        Formata dados de face landmarks da câmera.
+        
+        Input esperado:
+        {
+            "landmarks": [[x1,y1,z1], [x2,y2,z2], ...],  # 478 pontos faciais
+            "gaze_vector": {"dx": 0.2, "dy": -0.1},      # Direção do olhar
+            "ear": 0.25,                                  # Eye Aspect Ratio
+            "blink_rate": 18,                             # Blinks por minuto
+            "confidence": 0.85,                           # Confiança da deteção
+            "frame_b64": "base64_data"                    # Imagem (opcional)
+        }
+        
+        Output ZeroMQ:
+        {
+            "ts": "timestamp",
+            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
+            "data": [[flattened_landmarks, gaze_dx, gaze_dy, ear, blink_rate, confidence]]
+        }
+        """
+        
+        # Extrair dados
+        landmarks = rawData.get("landmarks")
+        gazeVector = rawData.get("gaze_vector", {})
+        ear = rawData.get("ear")
+        blinkRate = rawData.get("blink_rate")
+        confidence = rawData.get("confidence")
+        
+        # Validações básicas
+        if landmarks is None:
+            raise ValueError("Landmarks are required for camera data")
+        
+        if not isinstance(landmarks, list) or len(landmarks) != 478:
+            raise ValueError(f"Expected 478 landmarks, got {len(landmarks) if isinstance(landmarks, list) else 'not list'}")
+        
+        if ear is None or blinkRate is None or confidence is None:
+            raise ValueError("EAR, blink_rate and confidence are required")
+        
+        if not isinstance(gazeVector, dict) or "dx" not in gazeVector or "dy" not in gazeVector:
+            raise ValueError("Gaze vector must contain 'dx' and 'dy' components")
+        
+        # Validar ranges
+        if not (0.0 <= ear <= 1.0):
+            raise ValueError(f"EAR {ear} fora do range válido [0.0, 1.0]")
+        
+        if not (0 <= blinkRate <= 120):
+            raise ValueError(f"Blink rate {blinkRate} fora do range válido [0, 120]")
+        
+        if not (0.0 <= confidence <= 1.0):
+            raise ValueError(f"Confidence {confidence} fora do range válido [0.0, 1.0]")
+        
+        gazeDx = float(gazeVector["dx"])
+        gazeDy = float(gazeVector["dy"])
+        
+        if not (-1.0 <= gazeDx <= 1.0 and -1.0 <= gazeDy <= 1.0):
+            raise ValueError(f"Gaze vector ({gazeDx}, {gazeDy}) fora do range válido [-1.0, 1.0]")
+        
+        # Flatten landmarks de [[x,y,z], ...] para [x1,y1,z1,x2,y2,z2,...]
+        landmarksFlat = []
+        for point in landmarks:
+            if not isinstance(point, list) or len(point) != 3:
+                raise ValueError(f"Each landmark must be [x, y, z], got {point}")
+            
+            # Verificar se coordenadas são válidas (assumindo normalizadas 0-1)
+            for coord in point:
+                if not (0.0 <= coord <= 1.0):
+                    raise ValueError(f"Landmark coordinate {coord} fora do range normalizado [0.0, 1.0]")
+            
+            landmarksFlat.extend([float(point[0]), float(point[1]), float(point[2])])
+        
+        # Verificar tamanho final dos landmarks flattened
+        if len(landmarksFlat) != 1434:  # 478 * 3
+            raise ValueError(f"Flattened landmarks should have 1434 values, got {len(landmarksFlat)}")
+        
+        return {
+            "ts": timestamp,
+            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
+            "data": [[
+                landmarksFlat,    # 1434 valores [x1,y1,z1,x2,y2,z2,...]
+                gazeDx,           # -1.0 a 1.0
+                gazeDy,           # -1.0 a 1.0  
+                float(ear),       # 0.0 a 1.0
+                float(blinkRate), # 0 a 120 bpm
+                float(confidence) # 0.0 a 1.0
+            ]]
+        }
+
     def _formatPolarPPI(self, rawData: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
         """
         Formata dados do Polar ARM Band (PPI).
