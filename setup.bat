@@ -12,39 +12,43 @@ echo [2/6] Instalar requirements.txt...
 :: Chamando pip diretamente do ambiente virtual para evitar problemas de ambiente
 "backend\.venv\Scripts\pip" install -r "backend\requirements.txt"
 
-:: 3. Voltar à raiz do projeto
-echo [3/6] A voltar à raiz do projeto...
+:: NOVO: Instalar a biblioteca Pillow para o backend
+echo [3/6] Instalar Pillow para o backend...
+"backend\.venv\Scripts\pip" install Pillow
+
+:: 3. Voltar à raiz do projeto (o passo 3 original foi renumerado para 4)
+echo [4/6] A voltar à raiz do projeto...
 cd /d "%~dp0"
 
-:: 4. Instalar dependências do frontend (se node_modules não existir)
+:: 4. Instalar dependências do frontend (se node_modules não existir) (o passo 4 original foi renumerado para 5)
 IF NOT EXIST "frontend\node_modules" (
-    echo [4/6] Instalar dependências do frontend (React + Vite)...
+    echo [5/6] Instalar dependências do frontend (React + Vite)...
     cd frontend
     npm install --legacy-peer-deps
     
     :: Instalar three.js e suas definições de tipo
-    echo [5/6] Instalar three.js e @types/three...
+    echo [6/6] Instalar three.js e @types/three...
     npm install three
     npm install --save-dev @types/three
     
     cd ..
 ) ELSE (
-    echo [4/6] Dependências do frontend já instaladas.
-    echo [5/6] three.js e @types/three já instalados (verificar manualmente se necessário).
+    echo [5/6] Dependências do frontend já instaladas.
+    echo [6/6] three.js e @types/three já instalados (verificar manualmente se necessário).
 )
 
-:: 6. Fim
+:: Fim
 echo.
 echo === ✅ SETUP COMPLETO! ===
 echo.
 echo Agora podes abrir dois terminais:
 echo ------------------------------------
 echo [Backend] Ativa o ambiente virtual:
-echo     CALL backend\.venv\Scripts\activate
-echo     uvicorn app.main:app --reload
+echo    CALL backend\.venv\Scripts\activate
+echo    uvicorn app.main:app --reload
 echo.
 echo [Frontend] Inicia com:
-echo     cd frontend
-echo     npm run dev
+echo    cd frontend
+echo    npm run dev
 echo ------------------------------------
 pause

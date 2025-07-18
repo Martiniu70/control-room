@@ -16,7 +16,7 @@ interface AccelerometerCardProps {
 
 // Interface para um ponto individual na nova animação
 interface AnimatedPoint {
-  id: number;
+  id: string;
   x: number;
   startY: number;      // Posição Y inicial (topo ou base do card)
   targetY: number;     // Posição Y final que o ponto deve alcançar
@@ -44,6 +44,7 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
   const animationFrameId = useRef<number | null>(null);
   const pointIdCounter = useRef<number>(0);
   const lastProcessedZTimestamp = useRef<number>(0); 
+  const lastGeneratedZValue = useRef<number | null>(null);
 
   // Configurações da animação de Z
   const POINTS_PER_UPDATE = 15;      // Número de pontos a gerar por cada atualização significativa
@@ -51,6 +52,8 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
   const BASE_SPEED_PX_PER_MS = 0.005; // Velocidade base dos pontos (pixels por milissegundo)
   const MAX_TRAVEL_DISTANCE = svgHeight / 2 * 0.9; // Distância máxima que um ponto pode viajar (quase metade do card)
   const Z_ACCELERATION_SCALE = 20;   // Aceleração Z máxima esperada para atingir MAX_TRAVEL_DISTANCE
+  const Z_UPDATE_INTERVAL_MS = 100;
+  const Z_CHANGE_THRESHOLD = 0.1;
 
   // Callback para a função de animação
   const animatePoints = useCallback((time: DOMHighResTimeStamp) => {
@@ -96,6 +99,18 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
 
     const currentZ = data.z;
     const absZ = Math.abs(currentZ);
+    const currentTime = performance.now();
+
+    if(
+      absZ < MIN_Z_THRESHOLD ||
+      (currentTime - lastProcessedZTimestamp.current < Z_UPDATE_INTERVAL_MS &&
+        lastGeneratedZValue.current !== null &&
+        Math.abs(currentZ - lastGeneratedZValue.current) < Z_CHANGE_THRESHOLD
+      )
+    ){return;}
+
+    lastProcessedZTimestamp.current = currentTime;
+    lastGeneratedZValue.current= currentZ;
 
     const direction = currentZ > 0 ? 1 : -1; // 1 para baixo (Z positivo), -1 para cima (Z negativo)
     
@@ -109,28 +124,26 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
 
     const newPoints: AnimatedPoint[] = [];
     for (let i = 0; i < POINTS_PER_UPDATE; i++) {
-    pointIdCounter.current += 1;
+      const uniqueId = `${currentTime}-${pointIdCounter.current++}`;
     
-    // Ajuste aqui: startY e targetY para iniciar no topo/base
-    const startY = direction > 0 ? -5 : svgHeight + 5; // Começa um pouco fora da tela (topo ou base)
-    const targetY = direction > 0 ? (0 + travelDistance) : (svgHeight - travelDistance); // Move-se para dentro do card
-    
-    newPoints.push({
-        id: pointIdCounter.current,
-        x: Math.random() * width, // Posição X aleatória
-        startY: startY,
-        targetY: targetY,
-        currentY: startY, // Inicializa na posição de início
-        startTime: performance.now(), // Tempo atual
-        duration: duration,
-        opacity: 1, // Começa totalmente opaco
-        direction: direction,
-    });
-    
-
-      setAnimatedPoints(prev => [...prev, ...newPoints]);
+      // Ajuste aqui: startY e targetY para iniciar no topo/base
+      const startY = direction > 0 ? -5 : svgHeight + 5; // Começa um pouco fora da tela (topo ou base)
+      const targetY = direction > 0 ? (0 + travelDistance) : (svgHeight - travelDistance); // Move-se para dentro do card
+      
+      newPoints.push({
+          id: uniqueId,
+          x: Math.random() * width, // Posição X aleatória
+          startY: startY,
+          targetY: targetY,
+          currentY: startY, // Inicializa na posição de início
+          startTime: currentTime, // Tempo atual
+          duration: duration,
+          opacity: 1, // Começa totalmente opaco
+          direction: direction,
+      });
     }
-  }, [data, width, svgHeight, centerY_svg, MAX_TRAVEL_DISTANCE]);
+    setAnimatedPoints(prev => [...prev, ...newPoints]);
+  }, [data, width, svgHeight, centerY_svg, MAX_TRAVEL_DISTANCE, MIN_Z_THRESHOLD, Z_ACCELERATION_SCALE, BASE_SPEED_PX_PER_MS]);
 
   // Se não houver dados, mostrar mensagem de espera
   if (!data) {
