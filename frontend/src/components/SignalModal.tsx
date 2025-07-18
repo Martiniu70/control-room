@@ -1,12 +1,26 @@
-interface ModalProps {
+import React from 'react';
+
+interface SignalModalProps {
   open: boolean;
-  signals: string[];
+  availableSignals: Record<string, string[]>; // { component: string[] }
+  loading?: boolean;
   onClose: () => void;
-  onSelect: (signal: string) => void;
+  onSelect: (component: string, signalName: string) => void;
 }
 
-const SignalModal: React.FC<ModalProps> = ({ open, signals, onClose, onSelect }) => {
+const SignalModal: React.FC<SignalModalProps> = ({ 
+  open, 
+  availableSignals,
+  loading = false,
+  onClose, 
+  onSelect 
+}) => {
   if (!open) return null;
+
+  // Função para capitalizar a primeira letra
+  const capitalize = (str: string) => {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  };
 
   return (
     <div 
@@ -14,31 +28,59 @@ const SignalModal: React.FC<ModalProps> = ({ open, signals, onClose, onSelect })
       onClick={onClose}
     >
       <div 
-        className="bg-white rounded p-6 max-w-sm w-full shadow-lg"
+        className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto shadow-lg"
         onClick={e => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold mb-4">Select Signal to Add</h2>
-        <ul className="space-y-2 max-h-64 overflow-y-auto">
-          {signals.length === 0 && (
-            <li className="text-gray-500">No signals available</li>
-          )}
-          {signals.map((signal) => (
-            <li key={signal}>
-              <button
-                className="w-full text-left px-4 py-2 rounded hover:bg-gray-200"
-                onClick={() => onSelect(signal)}
-              >
-                {signal}
-              </button>
-            </li>
-          ))}
-        </ul>
-        <button 
-          className="mt-4 px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 focus:outline-none"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Add Signal to Dashboard</h2>
+          <button 
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 text-2xl"
+          >
+            &times;
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-4">
+            <p>Loading available signals...</p>
+          </div>
+        ) : Object.keys(availableSignals).length === 0 ? (
+          <div className="text-center py-4">
+            <p>No signals available</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {Object.entries(availableSignals).map(([component, signals]) => (
+              <div key={component} className="border rounded-lg p-4">
+                <h3 className="font-medium text-lg mb-2">{capitalize(component)}</h3>
+                <ul className="space-y-2">
+                  {signals.map((signal) => {
+                    return (
+                      <li key={`${component}-${signal}`}>
+                        <button
+                          className="w-full text-left px-4 py-2 rounded flex items-center"
+                          onClick={() => onSelect(component, signal)}
+                        >
+                          <span>{capitalize(signal)}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end">
+          <button 
+            className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );

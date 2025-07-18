@@ -4,6 +4,8 @@ import MainGrid from "./components/MainGrid";
 import Header from "./components/Header";
 import SignalModal from "./components/SignalModal";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useSignalControl } from "./hooks/useSignalControl";
+
 import { Layout } from "react-grid-layout";
 
 interface SignalPoint {
@@ -14,10 +16,13 @@ interface SignalPoint {
 }
 
 interface DataPoint {
-  timeSeconds: number;  // Tempo real em segundos desde início
-  hr?: number;         // Heart Rate
-  ecg?: number;        // TODO
-  eeg?: number;        // TODO
+  x: number;
+  value: number;
+}
+
+interface EcgBatch{
+  timeSeconds: number;
+  values: number[];
 }
 
 interface CardType {
@@ -25,7 +30,9 @@ interface CardType {
   label: string;
   colSpan: number;
   rowSpan: number;
-  signalType: 'hr' | 'ecg' | 'eeg' | 'steering' | 'speed';
+  signalType: 'hr' | 'ecg' | 'eeg' | "gyroscope" | "accelerometer" | 'steering' | 'speed';
+  component: string;
+  signalName: string;
 }
 
 interface Tab {
@@ -36,24 +43,31 @@ interface Tab {
 function App() {
   // WebSocket connection to backend
   const { 
-    latestCardiacData, 
+    latestCardiacData,
     latestEegData, 
     latestUnityData, 
     connectionStatus, 
     recentAnomalies,
-    availableSignals,
     connect,
     disconnect
   } = useWebSocket();
 
-  // Estado para mostrar/ocultar modal
+  const {
+    availableSignals,
+    activeSignals,
+    loading: signalsLoading,
+    fetchSignalStatus,
+    loadSignals,
+    enableAllSignals,
+    enableSignal,
+    disableSignal
+  } = useSignalControl();
+
+  // Estados do componente
   const [modalOpen, setModalOpen] = useState(false);
-
-  // Referência para tempo inicial
   const startTimeRef = useRef<number>(Date.now());
-  
   const [heartRateData, setHeartRateData] = useState<DataPoint[]>([]);
-
+  const [ecgDataBatches, setEcgDataBatches] = useState<EcgBatch[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, label: "Tab 1" }]);
   const [currentTabId, setCurrentTabId] = useState<number>(1);
   const [nextTabId, setNextTabId] = useState<number>(2);
@@ -61,18 +75,30 @@ function App() {
   const [cardsPerTab, setCardsPerTab] = useState<Record<number, CardType[]>>({ 1: [] });
   const [cardIdCounter, setCardIdCounter] = useState<number>(1);
 
+  // Atualizar dados de frequencia cardiaca
   useEffect(() => {
     if (latestCardiacData?.hr) {
       const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
       const newDataPoint: DataPoint = {
-        timeSeconds: currentTimeSeconds,
-        hr: latestCardiacData.hr.value
+        x: currentTimeSeconds,
+        value: latestCardiacData.hr.value
       };
       setHeartRateData(prev => [...prev, newDataPoint].slice(-200));
-      console.log(`HR received: ${latestCardiacData.hr.value} bpm at ${currentTimeSeconds.toFixed(1)}s`);
     }
   }, [latestCardiacData?.hr]);
 
+  useEffect(() => {
+    if(latestCardiacData?.ecg && Array.isArray(latestCardiacData.ecg.value)){
+      const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
+      const newEcgBatch: EcgBatch = {
+        timeSeconds : currentTimeSeconds,
+        values: latestCardiacData.ecg.value
+      };
+      setEcgDataBatches(prev => [...prev, newEcgBatch].slice(-50));
+    }
+  }, [latestCardiacData?.ecg]);
+
+  // Funcoes de manipulação de UI
   const updateLayout = (newLayout: Layout[]) => {
     setLayoutsPerTab((prev) => ({
       ...prev,
@@ -109,21 +135,35 @@ function App() {
     });
   };
 
-  const addCard = (signalType : CardType["signalType"]) => {
-    const labelMap: Record<CardType["signalType"], string> = {
-      hr: "Heart Rate",
-      ecg: "ECG",
-      eeg: "EEG",
-      steering: "Steering",
-      speed: "Speed"
-    };
+  // Mapeamento de tipos de sinal para labels
+  const labelMap: Record<CardType["signalType"], string> = {
+    hr: "Heart Rate",
+    ecg: "ECG",
+    eeg: "EEG",
+    gyroscope: "Gyro",
+    accelerometer: "Acc",
+    steering: "Steering",
+    speed: "Speed"
+  };
+
+  const addCard = (component: string, signalName: string) => {
+    // Determina o tipo de sinal baseado no nome
+    let signalType: CardType["signalType"] = "hr";
+    if (signalName.includes("ecg")) signalType = "ecg";
+    else if (signalName.includes("eeg")) signalType = "eeg";
+    else if (signalName.includes("accelerometer")) signalType = "accelerometer";
+    else if (signalName.includes("gyroscope")) signalType = "gyroscope";
+    else if (signalName.includes("steering")) signalType = "steering";
+    else if (signalName.includes("speed")) signalType = "speed";
 
     const newCard: CardType = {
       id: `${currentTabId}-${cardIdCounter}`,
-      label: labelMap[signalType] || signalType,
+      label: `${labelMap[signalType]} (${signalName})`,
       colSpan: 1,
       rowSpan: 1,
       signalType,
+      component,
+      signalName
     };
     
     setCardsPerTab((prev) => ({
@@ -131,26 +171,26 @@ function App() {
       [currentTabId]: [...(prev[currentTabId] || []), newCard],
     }));
     setCardIdCounter((prev) => prev + 1);
-  };
 
-  const currentCards = cardsPerTab[currentTabId] || [];
+    // Ativar o sinal se nao estiver ativo
+    if(!activeSignals[component]?.includes(signalName)){
+      enableSignal(component, signalName);
+    }
+  };
 
   // Ao clicar no botão Add Card no Header, abrir modal
   const handleAddCardClick = () => {
+    loadSignals();
     setModalOpen(true);
   };
 
   // Quando o utilizador clicar num sinal dentro do modal
-  const handleSignalSelect = (signalName: string) => {
-    console.log("Selected signal:", signalName);
-
-    if(signalName === "cardiac"){
-      addCard("hr");
-    }
-
-    // Por enquanto só log
+  const handleSignalSelect = (component: string, signalName: string) => {
+    addCard(component, signalName)
     setModalOpen(false);  // Fecha modal
   };
+  
+  const currentCards = cardsPerTab[currentTabId] || [];
 
   return (
     <div className="flex flex-col h-full">
@@ -186,7 +226,6 @@ function App() {
         )}
       </div>
 
-      {/* Passar a função que abre modal para o Header */}
       <Header onAddCard={handleAddCardClick} />
       
       <div className="flex flex-1">
@@ -203,6 +242,13 @@ function App() {
             layout={layoutsPerTab[currentTabId] || []}
             onLayoutChange={updateLayout}
             heartRateData={heartRateData}
+            ecgDataBatches={ecgDataBatches}
+            onDisableSignal={(cardId) => {
+              const card = currentCards.find(c => c.id === cardId);
+              if (card) {
+                disableSignal(card.component, card.signalName);
+              }
+            }}
           />
         </main>
       </div>
@@ -210,19 +256,23 @@ function App() {
       {/* Modal para seleção de sinais */}
       <SignalModal 
         open={modalOpen}
-        signals={availableSignals}
+        availableSignals={availableSignals}
+        loading={signalsLoading}
         onClose={() => setModalOpen(false)}
-        onSelect={handleSignalSelect}/>
+        onSelect={handleSignalSelect}
+      />
 
       {/* DEBUG PANEL */}
       {process.env.NODE_ENV === 'development' && (
         <div className="bg-gray-800 text-white p-2 text-xs">
           <div className="flex gap-4">
             <span>HR Points: {heartRateData.length}</span>
-            <span>Latest HR: {heartRateData[heartRateData.length - 1]?.hr ?? 'N/A'} bpm</span>
+            <span>Latest HR: {heartRateData[heartRateData.length - 1]?.value ?? 'N/A'} bpm</span>
+            <span>ECG Batches: {ecgDataBatches.length}</span>
             <span>Time Running: {((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s</span>
             <span>Connected: {connectionStatus.connected ? 'Yes' : 'No'}</span>
             <span>Anomalies: {recentAnomalies.length}</span>
+            <span>Signals Loading: {signalsLoading ? 'Yes' : 'No'}</span>
           </div>
         </div>
       )}

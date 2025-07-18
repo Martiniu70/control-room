@@ -1,3 +1,4 @@
+// MainGrid.tsx
 import React, { useEffect, useRef, useState } from "react";
 import ChartCard from "./ChartCard";
 import GridLayout, { Layout } from "react-grid-layout";
@@ -11,20 +12,27 @@ interface CardType {
   colSpan: number;
   rowSpan: number;
   signalType: SignalType;
+  signalName: string;
+  component: string;
 }
 
-interface DataPoint {
-  timeSeconds: number;  // Tempo real em segundos
-  hr?: number;         // Heart Rate
-  ecg?: number;        // TODO
-  eeg?: number;        // TODO
+interface Point{
+  x: number;
+  value: number;
+}
+
+interface EcgBatch{
+  timeSeconds: number;
+  values: number[];
 }
 
 interface MainGridProps {
   items: CardType[];
   layout: Layout[];
   onLayoutChange: (layout: Layout[]) => void;
-  heartRateData: DataPoint[]; // Dados específicos de HR
+  ecgDataBatches: EcgBatch[];
+  heartRateData: Point[]; // Dados específicos de HR
+  onDisableSignal: (cardId: string) => void;
 }
 
 interface GridProps {
@@ -37,7 +45,9 @@ const MainGrid: React.FC<MainGridProps> = ({
   items, 
   layout, 
   onLayoutChange, 
-  heartRateData
+  heartRateData,
+  ecgDataBatches, 
+  onDisableSignal
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gridProps, setGridProps] = useState<GridProps>({
@@ -68,7 +78,6 @@ const MainGrid: React.FC<MainGridProps> = ({
     return () => window.removeEventListener("resize", calculateGrid);
   }, []);
 
-  // Layout definition for RGL (mantido igual)
   const initialLayout: Layout[] = layout.length
     ? layout
     : items.map((item, i) => ({
@@ -101,21 +110,33 @@ const MainGrid: React.FC<MainGridProps> = ({
     })),
   ];
 
-  // ✅ FUNÇÃO SIMPLES: Preparar dados para cada tipo de gráfico
+  // ✅ FUNÇÃO ATUALIZADA: Preparar dados para cada tipo de gráfico
   const getChartData = (cardType: CardType) => {
     switch (cardType.signalType) {
       case 'hr':
-        // Converter dados HR para formato do ChartCard
-        return heartRateData
-          .filter(point => point.hr !== undefined)
-          .map(point => ({
-            x: point.timeSeconds,
-            value: point.hr!
-          }));
+        // Dados HR já estão formatados como Point[], apenas filtramos se necessário
+        return heartRateData.filter(point => point.value !== undefined);
       
       case 'ecg':
-        // TODO - dados ECG
-        return [];
+        const ecgPoints: Point[] = [];
+        // ✅ IMPORTANTE: VERIFIQUE se esta sampleRate (200) corresponde à taxa real dos seus dados ECG.
+        // Se for diferente, ajuste aqui.
+        const sampleRate = 200; 
+        const sampleDuration = 1 / sampleRate;
+        const windowDuration = 5; // Duração da janela para ECG em segundos (ex: 5 segundos)
+        const desiredPointsInWindow = Math.ceil(windowDuration * sampleRate); // Calcular quantos pontos precisamos
+
+        // ✅ ACUMULAR TODOS OS PONTOS DOS BATCHES RECENTES
+        ecgDataBatches.forEach(batch => {
+          batch.values.forEach((val, index) => {
+            const pointTime = batch.timeSeconds + (index * sampleDuration);
+            ecgPoints.push({x: pointTime, value: val});
+          });
+        });
+        
+        // ✅ CORTAR A ARRAY PARA CONTER APENAS OS PONTOS DENTRO DA JANELA DE INTERESSE
+        // Isso é crucial para evitar que o gráfico se comprima com muitos dados históricos.
+        return ecgPoints.slice(-desiredPointsInWindow); 
       
       case 'eeg':
         // TODO - dados EEG
@@ -126,13 +147,25 @@ const MainGrid: React.FC<MainGridProps> = ({
     }
   };
 
-  // Escolher cor por tipo
   const getChartColor = (signalType: string) => {
     switch (signalType) {
-      case 'hr': return "#e74c3c";      // Vermelho para HR
-      case 'ecg': return "#27ae60";     // Verde para ECG
-      case 'eeg': return "#8884d8";     // Azul para EEG
-      default: return "#95a5a6";        // Cinza para outros
+      case 'hr': return "#e74c3c";
+      case 'ecg': return "#27ae60";
+      case 'eeg': return "#8884d8";
+      default: return "#95a5a6";
+    }
+  };
+
+  const getChartUnit = (signalType: string) => {
+    switch (signalType) {
+      case 'hr': return "bpm";
+      case 'ecg': return "mV";
+      case 'eeg': return "µV";
+      case 'gyroscope': return "deg/s";
+      case 'accelerometer': return "m/s²";
+      case 'steering': return "deg";
+      case 'speed': return "km/h";
+      default: return "";
     }
   };
 
@@ -152,29 +185,38 @@ const MainGrid: React.FC<MainGridProps> = ({
         {items.map((item) => {
           const chartData = getChartData(item);
           const chartColor = getChartColor(item.signalType);
+          const chartUnit = getChartUnit(item.signalType);
           
           return (
             <div
               key={item.id}
-              className="bg-white rounded-lg shadow-md flex items-center justify-center text-gray-700 font-semibold overflow-hidden"
+              className="bg-white rounded-lg shadow-md flex flex-col"
             >
-              {/* RENDERIZAÇÃO SIMPLES BASEADA NO TIPO */}
-              {item.signalType === 'hr' && (
+              <div className="flex justify-between items-center p-2 border-b">
+                <h3 className="font-medium text-sm">{item.label}</h3>
+                <button 
+                  onClick={() => onDisableSignal(item.id)}
+                  className="text-xs text-red-500 hover:text-red-700"
+                  title="Disable signal"
+                >
+                  Disable
+                </button>
+              </div>
+              
+              <div className="flex-1 p-2">
+                {/* Removi a condição extra com item.signalType === 'hr' || item.signalType === "ecg"
+                    porque getChartData sempre retorna [] se não houver dados ou não for um tipo gerido.
+                    A condição chartData.length > 0 já é suficiente para mostrar o ChartCard
+                    com 'Waiting for data...' se a array estiver vazia. */}
                 <ChartCard 
-                  title={`Heart Rate (${chartData.length} points)`}
+                  title=""
                   color={chartColor}
                   data={chartData}
-                  width={280}
-                  height={180}
+                  unit={chartUnit}
+                  width={gridProps.width / gridProps.cols - GAP * 2}
+                  height={gridProps.rowHeight - 60}
                 />
-              )}
-              
-              {item.signalType !== 'hr' && (
-                <div className="text-center text-gray-500">
-                  <h3 className="font-medium">{item.label}</h3>
-                  <p className="text-sm">Coming soon...</p>
-                </div>
-              )}
+              </div>
             </div>
           );
         })}
