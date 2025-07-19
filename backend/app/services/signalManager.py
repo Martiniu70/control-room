@@ -179,7 +179,6 @@ class SignalManager(SignalControlInterface):
                     "dataType": dataType,
                     "value": value,
                     "timestamp": point.timestamp,
-                    "anomalies": currentAnomalies
                 })
                 
                 # Emitir evento para novas anomalias

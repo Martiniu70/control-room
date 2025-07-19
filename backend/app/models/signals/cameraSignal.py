@@ -84,8 +84,8 @@ class CameraSignal(BaseSignal):
             )
         
         # Verificar campos obrigatórios
-        required_fields = ["landmarks", "gaze_vector", "ear", "blink_rate", "confidence"]
-        for field in required_fields:
+        requiredFields = ["landmarks", "gazeVector", "ear", "blinkRate", "confidence"]
+        for field in requiredFields:
             if field not in value:
                 raise SignalValidationError(
                     signalType="camera",
@@ -102,16 +102,16 @@ class CameraSignal(BaseSignal):
                 reason="Landmarks must be a list or numpy array"
             )
         
-        landmarks_array = np.array(landmarks)
-        if landmarks_array.shape != (self.expectedLandmarksCount, self.landmarksDimensions):
+        landmarksArray = np.array(landmarks)
+        if landmarksArray.shape != (self.expectedLandmarksCount, self.landmarksDimensions):
             raise SignalValidationError(
                 signalType="camera",
-                value=f"shape_{landmarks_array.shape}",
+                value=f"shape_{landmarksArray.shape}",
                 reason=f"Landmarks must have shape ({self.expectedLandmarksCount}, {self.landmarksDimensions})"
             )
         
         # Validar coordenadas normalizadas (0-1)
-        if not np.all((landmarks_array >= 0.0) & (landmarks_array <= 1.0)):
+        if not np.all((landmarksArray >= 0.0) & (landmarksArray <= 1.0)):
             raise SignalValidationError(
                 signalType="camera",
                 value="coordinates_out_of_range",
@@ -119,15 +119,15 @@ class CameraSignal(BaseSignal):
             )
         
         # Validar gaze vector
-        gaze_vector = value["gaze_vector"]
-        if not isinstance(gaze_vector, dict) or "dx" not in gaze_vector or "dy" not in gaze_vector:
+        gazeVector = value["gazeVector"]
+        if not isinstance(gazeVector, dict) or "dx" not in gazeVector or "dy" not in gazeVector:
             raise SignalValidationError(
                 signalType="camera",
                 value="invalid_gaze_structure",
                 reason="Gaze vector must be dict with 'dx' and 'dy' keys"
             )
         
-        dx, dy = gaze_vector["dx"], gaze_vector["dy"]
+        dx, dy = gazeVector["dx"], gazeVector["dy"]
         if not (self.gazeNormalRange[0] <= dx <= self.gazeNormalRange[1] and
                 self.gazeNormalRange[0] <= dy <= self.gazeNormalRange[1]):
             raise SignalValidationError(
@@ -146,11 +146,11 @@ class CameraSignal(BaseSignal):
             )
         
         # Validar blink rate
-        blink_rate = value["blink_rate"]
-        if not isinstance(blink_rate, (int, float)) or not (0 <= blink_rate <= 120):
+        blinkRate = value["blinkRate"]
+        if not isinstance(blinkRate, (int, float)) or not (0 <= blinkRate <= 120):
             raise SignalValidationError(
                 signalType="camera",
-                value=blink_rate,
+                value=blinkRate,
                 reason="Blink rate must be between 0 and 120 bpm"
             )
         
@@ -198,19 +198,19 @@ class CameraSignal(BaseSignal):
         
         # Extrair valores principais
         ear = data.get("ear")
-        blink_rate = data.get("blink_rate")
+        blinkRate = data.get("blinkRate")
         confidence = data.get("confidence")
-        gaze_vector = data.get("gaze_vector", {})
+        gazeVector = data.get("gazeVector", {})
         
         # Anomalia: Taxa de piscadelas baixa (sonolência)
-        if blink_rate is not None and blink_rate < self.drowsinessBlinkThreshold:
-            severity = "crítica" if blink_rate < 5 else "moderada"
-            anomalies.append(f"Taxa de piscadelas baixa detectada: {blink_rate:.1f} bpm (sonolência {severity})")
+        if blinkRate is not None and blinkRate < self.drowsinessBlinkThreshold:
+            severity = "crítica" if blinkRate < 5 else "moderada"
+            anomalies.append(f"Taxa de piscadelas baixa detectada: {blinkRate:.1f} bpm (sonolência {severity})")
         
         # Anomalia: Taxa de piscadelas muito alta (stress/irritação)
-        if blink_rate is not None and blink_rate > self.hyperBlinkThreshold:
-            severity = "alta" if blink_rate > self.hyperBlinkThreshold * 1.5 else "moderada"
-            anomalies.append(f"Taxa de piscadelas excessiva: {blink_rate:.1f} bpm (stress {severity})")
+        if blinkRate is not None and blinkRate > self.hyperBlinkThreshold:
+            severity = "alta" if blinkRate > self.hyperBlinkThreshold * 1.5 else "moderada"
+            anomalies.append(f"Taxa de piscadelas excessiva: {blinkRate:.1f} bpm (stress {severity})")
         
         # Anomalia: EAR baixo prolongado (olhos fechados/sonolência)
         if ear is not None and ear < self.earDrowsyThreshold:
@@ -228,57 +228,57 @@ class CameraSignal(BaseSignal):
             anomalies.append(f"Confiança de deteção baixa: {confidence:.2f} (qualidade {severity})")
         
         # Anomalia: Olhar muito desviado (distração)
-        if gaze_vector:
-            dx = gaze_vector.get("dx", 0)
-            dy = gaze_vector.get("dy", 0)
-            gaze_magnitude = np.sqrt(dx**2 + dy**2)
+        if gazeVector:
+            dx = gazeVector.get("dx", 0)
+            dy = gazeVector.get("dy", 0)
+            gazeMagnitude = np.sqrt(dx**2 + dy**2)
             
-            if gaze_magnitude > 0.7:  # Olhar muito afastado do centro
-                anomalies.append(f"Olhar desviado detectado: magnitude {gaze_magnitude:.2f} (distração)")
+            if gazeMagnitude > 0.7:  # Olhar muito afastado do centro
+                anomalies.append(f"Olhar desviado detectado: magnitude {gazeMagnitude:.2f} (distração)")
         
         # Anomalia: Variação súbita de EAR (instabilidade)
         if len(recentPoints) >= 3 and ear is not None:
-            recent_ears = [p.value.get("ear") for p in recentPoints[-3:] 
+            recentEars = [p.value.get("ear") for p in recentPoints[-3:] 
                           if isinstance(p.value, dict) and p.value.get("ear") is not None]
             
-            if len(recent_ears) >= 3:
-                ear_variation = max(recent_ears) - min(recent_ears)
-                if ear_variation > 0.2:  # Variação > 20% do range normal
-                    anomalies.append(f"Variação súbita no EAR: {ear_variation:.3f} (instabilidade)")
+            if len(recentEars) >= 3:
+                earVariation = max(recentEars) - min(recentEars)
+                if earVariation > 0.2:  # Variação > 20% do range normal
+                    anomalies.append(f"Variação súbita no EAR: {earVariation:.3f} (instabilidade)")
         
         # Anomalia: Drift de gaze (movimento errático)
-        if len(recentPoints) >= 2 and gaze_vector:
+        if len(recentPoints) >= 2 and gazeVector:
             prev_point = recentPoints[-2]
             if isinstance(prev_point.value, dict):
-                prev_gaze = prev_point.value.get("gaze_vector", {})
-                if prev_gaze:
-                    dx_change = abs(gaze_vector.get("dx", 0) - prev_gaze.get("dx", 0))
-                    dy_change = abs(gaze_vector.get("dy", 0) - prev_gaze.get("dy", 0))
-                    gaze_change = np.sqrt(dx_change**2 + dy_change**2)
+                prevGaze = prev_point.value.get("gazeVector", {})
+                if prevGaze:
+                    dxChange = abs(gazeVector.get("dx", 0) - prevGaze.get("dx", 0))
+                    dyChange = abs(gazeVector.get("dy", 0) - prevGaze.get("dy", 0))
+                    gazeChange = np.sqrt(dxChange**2 + dyChange**2)
                     
-                    if gaze_change > self.gazeStabilityThreshold:
-                        anomalies.append(f"Movimento errático do olhar: mudança {gaze_change:.2f}")
+                    if gazeChange > self.gazeStabilityThreshold:
+                        anomalies.append(f"Movimento errático do olhar: mudança {gazeChange:.2f}")
         
         # Atualizar histórico interno
-        self._updateInternalHistory(ear, blink_rate, gaze_vector)
+        self._updateInternalHistory(ear, blinkRate, gazeVector)
         
         return anomalies
     
-    def _updateInternalHistory(self, ear: Optional[float], blink_rate: Optional[float], 
-                              gaze_vector: Optional[Dict[str, float]]) -> None:
+    def _updateInternalHistory(self, ear: Optional[float], blinkRate: Optional[float], 
+                              gazeVector: Optional[Dict[str, float]]) -> None:
         """
         Atualiza histórico interno para análise de tendências.
         
         Args:
             ear: Eye Aspect Ratio atual
-            blink_rate: Taxa de piscadelas atual
-            gaze_vector: Vetor de direção do olhar atual
+            blinkRate: Taxa de piscadelas atual
+            gazeVector: Vetor de direção do olhar atual
         """
         
         # Atualizar valores anteriores
         self.lastEar = ear
-        self.lastBlinkRate = blink_rate
-        self.lastGazeVector = gaze_vector.copy() if gaze_vector else None
+        self.lastBlinkRate = blinkRate
+        self.lastGazeVector = gazeVector.copy() if gazeVector else None
         
         # Manter histórico de EAR (últimos 10 valores)
         if ear is not None:
@@ -298,14 +298,14 @@ class CameraSignal(BaseSignal):
             Lista de valores de confidence
         """
         
-        numeric_values = []
+        numericValues = []
         for point in points:
             if isinstance(point.value, dict):
                 confidence = point.value.get("confidence")
                 if confidence is not None and isinstance(confidence, (int, float)):
-                    numeric_values.append(float(confidence))
+                    numericValues.append(float(confidence))
         
-        return numeric_values
+        return numericValues
     
     def getCameraStatus(self) -> Dict[str, Any]:
         """
@@ -315,14 +315,14 @@ class CameraSignal(BaseSignal):
             Status detalhado com informações específicas de câmera
         """
         
-        base_status = self.getStatus()
+        baseStatus = self.getStatus()
         
         # Calcular métricas específicas de câmera
         recent_points = self.getLatest(5)
         camera_metrics = self._calculateCameraMetrics(recent_points)
         
         camera_status = {
-            **base_status,
+            **baseStatus,
             "cameraMetrics": camera_metrics,
             "lastValues": {
                 "ear": self.lastEar,
@@ -369,8 +369,8 @@ class CameraSignal(BaseSignal):
         # Extrair dados dos pontos recentes
         confidences = []
         ears = []
-        blink_rates = []
-        gaze_magnitudes = []
+        blinkRate = []
+        gazeMagnitude = []
         
         for point in recent_points:
             if isinstance(point.value, dict):
@@ -382,14 +382,14 @@ class CameraSignal(BaseSignal):
                 if "ear" in data:
                     ears.append(data["ear"])
                 
-                if "blink_rate" in data:
-                    blink_rates.append(data["blink_rate"])
+                if "blinkRate" in data:
+                    blinkRate.append(data["blinkRate"])
                 
-                if "gaze_vector" in data:
-                    gv = data["gaze_vector"]
+                if "gazeVector" in data:
+                    gv = data["gazeVector"]
                     if isinstance(gv, dict) and "dx" in gv and "dy" in gv:
                         magnitude = np.sqrt(gv["dx"]**2 + gv["dy"]**2)
-                        gaze_magnitudes.append(magnitude)
+                        gazeMagnitude.append(magnitude)
         
         metrics = {
             "available": True,
@@ -411,51 +411,51 @@ class CameraSignal(BaseSignal):
             }
         
         # Métricas comportamentais
-        if ears and blink_rates:
+        if ears and blinkRate:
             metrics["behaviorMetrics"] = {
                 "averageEar": round(np.mean(ears), 3),
-                "averageBlinkRate": round(np.mean(blink_rates), 1),
+                "averageBlinkRate": round(np.mean(blinkRate), 1),
                 "minEar": round(np.min(ears), 3),
-                "maxBlinkRate": round(np.max(blink_rates), 1),
+                "maxBlinkRate": round(np.max(blinkRate), 1),
                 "drowsinessIndicators": sum(1 for e in ears if e < self.earDrowsyThreshold),
-                "alertnessLevel": self._calculateAlertnessLevel(ears, blink_rates)
+                "alertnessLevel": self._calculateAlertnessLevel(ears, blinkRate)
             }
         
         # Métricas de estabilidade
-        if gaze_magnitudes:
+        if gazeMagnitude:
             metrics["stabilityMetrics"] = {
-                "averageGazeMagnitude": round(np.mean(gaze_magnitudes), 3),
-                "gazeStability": round(1.0 - np.std(gaze_magnitudes), 3),
-                "centeredGazeFrames": sum(1 for g in gaze_magnitudes if g <= 0.2),
-                "distractedFrames": sum(1 for g in gaze_magnitudes if g > 0.7)
+                "averageGazeMagnitude": round(np.mean(gazeMagnitude), 3),
+                "gazeStability": round(1.0 - np.std(gazeMagnitude), 3),
+                "centeredGazeFrames": sum(1 for g in gazeMagnitude if g <= 0.2),
+                "distractedFrames": sum(1 for g in gazeMagnitude if g > 0.7)
             }
         
         return metrics
     
-    def _calculateAlertnessLevel(self, ears: List[float], blink_rates: List[float]) -> str:
+    def _calculateAlertnessLevel(self, ears: List[float], blinkRate: List[float]) -> str:
         """
         Calcula nível de alerta baseado em EAR e blink rate.
         
         Args:
             ears: Lista de valores EAR
-            blink_rates: Lista de taxas de piscadelas
+            blinkRate: Lista de taxas de piscadelas
             
         Returns:
             Nível de alerta ("alert", "normal", "drowsy", "critical")
         """
         
-        if not ears or not blink_rates:
+        if not ears or not blinkRate:
             return "unknown"
         
-        avg_ear = np.mean(ears)
-        avg_blink_rate = np.mean(blink_rates)
+        avgEar = np.mean(ears)
+        avgBlinkRate = np.mean(blinkRate)
         
         # Lógica de classificação
-        if avg_ear < 0.15 or avg_blink_rate < 5:
+        if avgEar < 0.15 or avgBlinkRate < 5:
             return "critical"
-        elif avg_ear < self.earDrowsyThreshold or avg_blink_rate < self.drowsinessBlinkThreshold:
+        elif avgEar < self.earDrowsyThreshold or avgBlinkRate < self.drowsinessBlinkThreshold:
             return "drowsy"
-        elif avg_ear > 0.35 and self.blinkRateNormalRange[0] <= avg_blink_rate <= self.blinkRateNormalRange[1]:
+        elif avgEar > 0.35 and self.blinkRateNormalRange[0] <= avgBlinkRate <= self.blinkRateNormalRange[1]:
             return "alert"
         else:
             return "normal"

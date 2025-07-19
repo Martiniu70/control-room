@@ -40,7 +40,7 @@ class WebSocketManager(SignalControlInterface):
         self.heartbeatInterval = 10.0  
         
         # Signal Control properties
-        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
         self.activeSignals: Set[str] = set()  # Começam todos desativos por default
         
         # Estatísticas de WebSocket incluindo filtering
@@ -317,8 +317,7 @@ class WebSocketManager(SignalControlInterface):
             "signalType": data["signalType"],
             "dataType": dataType,
             "timestamp": data["timestamp"],
-            "value": data["value"],
-            "anomalies": data.get("anomalies", [])
+            "value": data["value"]
         }
         
         # Enviar para todos os clientes

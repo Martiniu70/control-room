@@ -498,7 +498,7 @@ class SignalConfig:
                 "samplingRate": 100,                    # Hz conforme CardioWheel
                 "bufferSize": 3000,                     # 30s * 100Hz  
                 "normalRange": (-32768, 32767),         # Valores 16-bit ADC
-                "physicalRange": (-2000.0, 2000.0),    # ±2000°/s após conversão
+                "physicalRange": (-2000.0, 2000.0),     # ±2000°/s após conversão
                 "axes": ["x", "y", "z"],                # Eixos do giroscópio
                 "conversionFactor": 0.061,              # ADC para °/s (aprox 2000°/s / 32768)
                 "baselineOffset": 0,                    # Offset para calibração
