@@ -47,7 +47,16 @@ class CameraFaceLandmarksGenerator:
         
         # Configurações Camera do settings
         self.cameraConfig = settings.signals.cameraConfig
+        self.mockCameraConfig = settings.mockZeromq.generatorBaseConfig["camera"]
+
         self.landmarksConfig = self.cameraConfig["faceLandmarks"]
+        self.landmarkRanges = self.mockCameraConfig["landmarkRanges"]
+        self.anatomyPositions = self.mockCameraConfig["anatomyPositions"]
+
+        # Padrões e anomalias
+        self.attentionPatterns = self.mockCameraConfig["attentionPatterns"]
+        self.anomalyTypes = self.mockCameraConfig["anomalyTypes"]
+
         self.gazeConfig = self.cameraConfig["gaze"]
         self.blinkConfig = self.cameraConfig["blinkRate"]
         self.earConfig = self.cameraConfig["ear"]
@@ -88,20 +97,20 @@ class CameraFaceLandmarksGenerator:
         # Gaze tracking
         self.currentGazeVector = {"dx": 0.0, "dy": 0.0}  # Direção atual do olhar
         self.gazeTarget = {"dx": 0.0, "dy": 0.0}         # Target para suavização
-        self.gazeSmoothingFactor = 0.1                   # Factor de suavização
+        self.gazeSmoothingFactor = self.mockCameraConfig["naturalMovement"]["gazeSmoothingFactor"]
         
         # Face landmarks base (template facial normalizado)
         self.baseLandmarks = self._generateBaseFaceLandmarks()
         self.currentLandmarks = self.baseLandmarks.copy()
         
         # Parâmetros de movimento facial
-        self.headPosition = np.array([0.5, 0.5, 0.0])   # Centro da face normalizado
+        self.headPosition = np.array(self.anatomyPositions["faceCenter"])   # Centro da face normalizado
         self.headRotation = np.array([0.0, 0.0, 0.0])   # Rotação da cabeça (pitch, yaw, roll)
         self.microMovementPhase = 0.0                    # Fase para micro-movimentos
         
         # Configurações de imagem
-        self.imageSize = (200, 200)                      # Tamanho da imagem mock
-        self.imageQuality = 85                           # Qualidade JPEG
+        self.imageSize = tuple(self.mockCameraConfig["mockImage"]["size"])                      # Tamanho da imagem mock
+        self.imageQuality = self.mockCameraConfig["mockImage"]["quality"]                       # Qualidade JPEG
         
         self.logger.info(f"CameraFaceLandmarksGenerator initialized - {self.fps}Hz, {self.landmarksCount} landmarks")
     
@@ -141,7 +150,6 @@ class CameraFaceLandmarksGenerator:
             # Calcular valores derivados
             ear = self._calculateEAR(landmarks)
             blinkRate = self._calculateBlinkRate()
-            confidence = self._calculateDetectionConfidence()
             
             # Gerar imagem mock coordenada
             frameImage = self._generateMockImage(landmarks, ear)
@@ -156,7 +164,6 @@ class CameraFaceLandmarksGenerator:
                 "ear": ear,
                 "blink_rate": blinkRate,
                 "blink_counter": self.blinkCounter,
-                "confidence": confidence,
                 "frame_b64": frameImage,
                 "frameTimestamp": self.currentTimestamp - self.frameDuration,
                 "anomalyType": self.currentAnomalyType.value,
@@ -165,7 +172,7 @@ class CameraFaceLandmarksGenerator:
                 "frameNumber": self.frameCounter
             }
             
-            self.logger.debug(f"Generated camera frame {self.frameCounter}: EAR={ear:.3f}, BlinkRate={blinkRate:.1f}, Confidence={confidence:.3f}")
+            self.logger.debug(f"Generated camera frame {self.frameCounter}: EAR={ear:.3f}, BlinkRate={blinkRate:.1f}")
             
             return result
             
@@ -183,30 +190,32 @@ class CameraFaceLandmarksGenerator:
         """
         
         landmarks = np.zeros((478, 3))
+
+        # Usar ranges da config
+        ranges = self.landmarkRanges
         
-        # Face outline (contorno facial) - índices 0-16
-        faceOutline = self._generateFaceOutline()
-        landmarks[0:17] = faceOutline
+        # Face outline
+        start, end = ranges["faceOutline"]
+        landmarks[start:end+1] = self._generateFaceOutline()
         
-        # Sobrancelhas - índices 17-26
-        eyebrows = self._generateEyebrows()
-        landmarks[17:27] = eyebrows
+        # Eyebrows  
+        start, end = ranges["eyebrows"]
+        landmarks[start:end+1] = self._generateEyebrows()
         
-        # Olho esquerdo - índices 36-41
-        leftEye = self._generateLeftEye()
-        landmarks[36:42] = leftEye
+        # Eyes
+        start, end = ranges["leftEye"]
+        landmarks[start:end+1] = self._generateLeftEye()
         
-        # Olho direito - índices 42-47
-        rightEye = self._generateRightEye()
-        landmarks[42:48] = rightEye
+        start, end = ranges["rightEye"] 
+        landmarks[start:end+1] = self._generateRightEye()
+    
+        # Nariz
+        start, end = ranges["nose"]
+        landmarks[start:end+1] = self._generateNose()
         
-        # Nariz - índices 27-35
-        nose = self._generateNose()
-        landmarks[27:36] = nose
-        
-        # Boca - índices 48-67
-        mouth = self._generateMouth()
-        landmarks[48:68] = mouth
+        # Mouth
+        start, end = ranges["mouth"]
+        landmarks[start:end+1] = self._generateMouth()
         
         # Preencher landmarks restantes com distribuição facial plausível
         self._fillRemainingLandmarks(landmarks)
@@ -215,134 +224,167 @@ class CameraFaceLandmarksGenerator:
     
     def _generateFaceOutline(self) -> np.ndarray:
         """Gera contorno facial oval"""
-        outline = np.zeros((17, 3))
+        ranges = self.landmarkRanges["faceOutline"]
+        numPoints = ranges[1] - ranges[0] + 1
+        outline = np.zeros((numPoints, 3))
         
-        # Contorno oval de 0.3 a 0.7 em X, 0.2 a 0.9 em Y
-        for i in range(17):
-            angle = i * np.pi / 16  # 0 a π
-            x = 0.5 + 0.2 * np.cos(angle + np.pi/2)  # 0.3 a 0.7
-            y = 0.2 + 0.35 * (1 - np.cos(angle))     # 0.2 a 0.9
-            z = 0.0  # Plano frontal
+        faceWidth = self.anatomyPositions["faceWidth"]
+        faceHeight = self.anatomyPositions["faceHeight"]
+        faceCenter = self.anatomyPositions["faceCenter"]
+        
+        # Contorno oval baseado nas configurações
+        for i in range(numPoints):
+            angle = i * 2 * np.pi / (numPoints - 1)  # 0 a 2π
+            x = faceCenter[0] + (faceWidth / 2) * np.cos(angle + np.pi/2)
+            y = faceCenter[1] - faceHeight / 2 + (faceHeight / 2) * (1 - np.cos(angle))
+            z = faceCenter[2]  # Plano frontal
             outline[i] = [x, y, z]
         
         return outline
     
     def _generateEyebrows(self) -> np.ndarray:
         """Gera sobrancelhas"""
-        eyebrows = np.zeros((10, 3))
+        ranges = self.landmarkRanges["eyebrows"]
+        numPoints = ranges[1] - ranges[0] + 1
+        eyebrows = np.zeros((numPoints, 3))
         
-        # Sobrancelha esquerda (5 pontos)
-        for i in range(5):
-            x = 0.35 + i * 0.05     # 0.35 a 0.55
-            y = 0.35 - 0.02 * np.sin(i * np.pi / 4)  # Curva ligeira
+        leftEyeCenter = self.anatomyPositions["leftEyeCenter"]
+        rightEyeCenter = self.anatomyPositions["rightEyeCenter"]
+        eyeWidth = self.anatomyPositions["eyeWidth"]
+        
+        pointsPerEyebrow = numPoints // 2
+        
+        # Sobrancelha esquerda
+        for i in range(pointsPerEyebrow):
+            x = leftEyeCenter[0] - eyeWidth/2 + i * (eyeWidth / (pointsPerEyebrow - 1))
+            y = leftEyeCenter[1] - 0.05 - 0.02 * np.sin(i * np.pi / (pointsPerEyebrow - 1))  # Curva ligeira
             eyebrows[i] = [x, y, 0.0]
         
-        # Sobrancelha direita (5 pontos)
-        for i in range(5):
-            x = 0.65 - i * 0.05     # 0.65 a 0.45
-            y = 0.35 - 0.02 * np.sin(i * np.pi / 4)
-            eyebrows[5 + i] = [x, y, 0.0]
+        # Sobrancelha direita
+        for i in range(pointsPerEyebrow):
+            x = rightEyeCenter[0] + eyeWidth/2 - i * (eyeWidth / (pointsPerEyebrow - 1))
+            y = rightEyeCenter[1] - 0.05 - 0.02 * np.sin(i * np.pi / (pointsPerEyebrow - 1))
+            eyebrows[pointsPerEyebrow + i] = [x, y, 0.0]
         
         return eyebrows
     
     def _generateLeftEye(self) -> np.ndarray:
         """Gera landmarks do olho esquerdo"""
-        leftEye = np.zeros((6, 3))
+        ranges = self.landmarkRanges["leftEye"]
+        numPoints = ranges[1] - ranges[0] + 1
+        leftEye = np.zeros((numPoints, 3))
         
-        # Forma amendoada do olho
-        centerX, centerY = 0.37, 0.45
-        width, height = 0.06, 0.03
+        centerX, centerY, centerZ = self.anatomyPositions["leftEyeCenter"]
+        width = self.anatomyPositions["eyeWidth"]
+        height = self.anatomyPositions["eyeHeight"]
         
-        # 6 pontos do olho: canto interno, superior, canto externo, inferior, etc.
-        eyePoints = [
-            [centerX - width/2, centerY, 0.0],      # Canto interno
-            [centerX - width/4, centerY - height, 0.0],  # Superior esquerdo
-            [centerX + width/4, centerY - height, 0.0],  # Superior direito
-            [centerX + width/2, centerY, 0.0],           # Canto externo
-            [centerX + width/4, centerY + height, 0.0],  # Inferior direito
-            [centerX - width/4, centerY + height, 0.0]   # Inferior esquerdo
-        ]
+        # Pontos do olho distribuídos em forma amendoada
+        for i in range(numPoints):
+            angle = i * 2 * np.pi / numPoints
+            x = centerX + (width/2) * np.cos(angle)
+            y = centerY + (height/2) * np.sin(angle)
+            z = centerZ
+            leftEye[i] = [x, y, z]
         
-        leftEye = np.array(eyePoints)
         return leftEye
     
     def _generateRightEye(self) -> np.ndarray:
         """Gera landmarks do olho direito (simétrico ao esquerdo)"""
-        rightEye = np.zeros((6, 3))
+        ranges = self.landmarkRanges["rightEye"]
+        numPoints = ranges[1] - ranges[0] + 1
+        rightEye = np.zeros((numPoints, 3))
         
-        # Forma amendoada do olho (simétrico)
-        centerX, centerY = 0.63, 0.45
-        width, height = 0.06, 0.03
+        centerX, centerY, centerZ = self.anatomyPositions["rightEyeCenter"]
+        width = self.anatomyPositions["eyeWidth"]
+        height = self.anatomyPositions["eyeHeight"]
         
-        eyePoints = [
-            [centerX - width/2, centerY, 0.0],      # Canto interno
-            [centerX - width/4, centerY - height, 0.0],  # Superior esquerdo
-            [centerX + width/4, centerY - height, 0.0],  # Superior direito
-            [centerX + width/2, centerY, 0.0],           # Canto externo
-            [centerX + width/4, centerY + height, 0.0],  # Inferior direito
-            [centerX - width/4, centerY + height, 0.0]   # Inferior esquerdo
-        ]
+        # Pontos do olho distribuídos em forma amendoada
+        for i in range(numPoints):
+            angle = i * 2 * np.pi / numPoints
+            x = centerX + (width/2) * np.cos(angle)
+            y = centerY + (height/2) * np.sin(angle)
+            z = centerZ
+            rightEye[i] = [x, y, z]
         
-        rightEye = np.array(eyePoints)
         return rightEye
     
     def _generateNose(self) -> np.ndarray:
         """Gera landmarks do nariz"""
-        nose = np.zeros((9, 3))
+        ranges = self.landmarkRanges["nose"]
+        numPoints = ranges[1] - ranges[0] + 1
+        nose = np.zeros((numPoints, 3))
         
-        # Nariz central
-        centerX = 0.5
+        noseCenter = self.anatomyPositions["noseCenter"]
+        noseTip = self.anatomyPositions["noseTip"]
         
-        # Ponte do nariz (3 pontos)
-        nose[0] = [centerX, 0.45, 0.02]      # Topo
-        nose[1] = [centerX, 0.52, 0.01]      # Meio
-        nose[2] = [centerX, 0.59, 0.0]       # Base
+        bridgePoints = numPoints // 2
+        nostrilPoints = numPoints - bridgePoints
         
-        # Narinas (6 pontos)
-        for i in range(3):
-            # Narina esquerda
-            nose[3 + i] = [centerX - 0.02 - i*0.01, 0.58 + i*0.01, 0.0]
-            # Narina direita
-            nose[6 + i] = [centerX + 0.02 + i*0.01, 0.58 + i*0.01, 0.0]
+        # Ponte do nariz
+        for i in range(bridgePoints):
+            t = i / (bridgePoints - 1) if bridgePoints > 1 else 0
+            x = noseCenter[0]
+            y = noseCenter[1] + t * (noseTip[1] - noseCenter[1])
+            z = noseCenter[2] + t * (noseTip[2] - noseCenter[2])
+            nose[i] = [x, y, z]
+        
+        # Narinas
+        for i in range(nostrilPoints):
+            side = -1 if i < nostrilPoints // 2 else 1
+            x = noseTip[0] + side * 0.02
+            y = noseTip[1] + 0.01 * (i % (nostrilPoints // 2))
+            z = noseTip[2]
+            nose[bridgePoints + i] = [x, y, z]
         
         return nose
     
     def _generateMouth(self) -> np.ndarray:
         """Gera landmarks da boca"""
-        mouth = np.zeros((20, 3))
+        ranges = self.landmarkRanges["mouth"]
+        numPoints = ranges[1] - ranges[0] + 1
+        mouth = np.zeros((numPoints, 3))
         
-        centerX, centerY = 0.5, 0.75
-        width, height = 0.08, 0.03
+        centerX, centerY, centerZ = self.anatomyPositions["mouthCenter"]
+        width = self.anatomyPositions["mouthWidth"]
+        height = self.anatomyPositions["mouthHeight"]
         
-        # Contorno exterior da boca (12 pontos)
-        for i in range(12):
-            angle = i * 2 * np.pi / 12
+        outerPoints = numPoints // 2
+        innerPoints = numPoints - outerPoints
+        
+        # Contorno exterior da boca
+        for i in range(outerPoints):
+            angle = i * 2 * np.pi / outerPoints
             x = centerX + (width/2) * np.cos(angle)
             y = centerY + (height/2) * np.sin(angle) * 0.6  # Forma oval
-            mouth[i] = [x, y, 0.0]
+            mouth[i] = [x, y, centerZ]
         
-        # Contorno interior (8 pontos)
-        for i in range(8):
-            angle = i * 2 * np.pi / 8
+        # Contorno interior
+        for i in range(innerPoints):
+            angle = i * 2 * np.pi / innerPoints
             x = centerX + (width/3) * np.cos(angle)
             y = centerY + (height/3) * np.sin(angle) * 0.4
-            mouth[12 + i] = [x, y, 0.0]
+            mouth[outerPoints + i] = [x, y, centerZ]
         
         return mouth
     
     def _fillRemainingLandmarks(self, landmarks: np.ndarray):
         """Preenche landmarks restantes com distribuição facial plausível"""
         
-        # Para landmarks não definidos explicitamente, distribuir pela face
-        filledCount = 68  # Landmarks já definidos
-        remaining = 478 - filledCount
+        ranges = self.landmarkRanges["remaining"]
+        startIdx = ranges[0]
+        endIdx = ranges[1]
         
-        for i in range(remaining):
+        faceWidth = self.anatomyPositions["faceWidth"]
+        faceHeight = self.anatomyPositions["faceHeight"]
+        faceCenter = self.anatomyPositions["faceCenter"]
+        
+        # Para landmarks não definidos explicitamente, distribuir pela face
+        for i in range(startIdx, endIdx + 1):
             # Distribuir aleatoriamente mas dentro da região facial
-            x = np.random.uniform(0.3, 0.7)
-            y = np.random.uniform(0.3, 0.8)
+            x = faceCenter[0] + np.random.uniform(-faceWidth/2, faceWidth/2)
+            y = faceCenter[1] + np.random.uniform(-faceHeight/2, faceHeight/2)
             z = np.random.uniform(-0.02, 0.02)
-            landmarks[filledCount + i] = [x, y, z]
+            landmarks[i] = [x, y, z]
     
     def _updateAttentionPattern(self):
         """Atualiza padrão de atenção baseado em probabilidades e timing"""
@@ -352,30 +394,21 @@ class CameraFaceLandmarksGenerator:
         # Verificar se deve mudar padrão
         if currentTime - self.patternStartTime >= self.patternDuration:
             # Escolher novo padrão baseado em probabilidades
-            patterns = [
-                AttentionPattern.FOCUSED,           # 60% - Mais comum durante condução
-                AttentionPattern.CHECKING_MIRRORS,  # 15% - Verificar espelhos
-                AttentionPattern.LOOKING_ASIDE,     # 10% - Olhar para o lado
-                AttentionPattern.READING_DASHBOARD, # 8%  - Ler dashboard
-                AttentionPattern.DISTRACTED,        # 4%  - Distraído
-                AttentionPattern.DROWSY,            # 2%  - Sonolento
-                AttentionPattern.ALERT              # 1%  - Muito alerta
-            ]
+            patterns = []
+            weights = []
             
-            weights = [0.60, 0.15, 0.10, 0.08, 0.04, 0.02, 0.01]
+            for patternName, config in self.attentionPatterns.items():
+                patterns.append(AttentionPattern(patternName))
+                weights.append(config["probability"])
+            
             self.currentAttentionPattern = np.random.choice(patterns, p=weights)
             
             self.patternStartTime = currentTime
             
-            # Duração do padrão baseada no tipo
-            if self.currentAttentionPattern == AttentionPattern.FOCUSED:
-                self.patternDuration = np.random.uniform(20.0, 60.0)
-            elif self.currentAttentionPattern == AttentionPattern.DROWSY:
-                self.patternDuration = np.random.uniform(10.0, 30.0)
-            elif self.currentAttentionPattern in [AttentionPattern.CHECKING_MIRRORS, AttentionPattern.READING_DASHBOARD]:
-                self.patternDuration = np.random.uniform(2.0, 8.0)
-            else:
-                self.patternDuration = np.random.uniform(5.0, 15.0)
+            # Duração do padrão baseada na configuração
+            patternConfig = self.attentionPatterns[self.currentAttentionPattern.value]
+            durationRange = patternConfig["durationRange"]
+            self.patternDuration = np.random.uniform(durationRange[0], durationRange[1])
             
             self.logger.debug(f"Attention pattern changed to: {self.currentAttentionPattern.value} for {self.patternDuration:.1f}s")
     
@@ -394,18 +427,14 @@ class CameraFaceLandmarksGenerator:
         # Calcular probabilidade de blink baseada no padrão de atenção
         baseProbability = 0.02  # 2% chance por frame (0.5Hz)
         
-        if self.currentAttentionPattern == AttentionPattern.DROWSY:
-            blinkProbability = baseProbability * 0.3  # Menos blinks quando sonolento
-        elif self.currentAttentionPattern == AttentionPattern.ALERT:
-            blinkProbability = baseProbability * 2.0  # Mais blinks quando alerta
-        elif self.currentAttentionPattern == AttentionPattern.DISTRACTED:
-            blinkProbability = baseProbability * 1.5  # Ligeiramente mais blinks
-        else:
-            blinkProbability = baseProbability
+        patternConfig = self.attentionPatterns[self.currentAttentionPattern.value]
+        blinkMultiplier = patternConfig["blinkMultiplier"]
+        blinkProbability = baseProbability * blinkMultiplier
         
         # Evitar blinks muito próximos
+        minBlinkInterval = self.mockCameraConfig["naturalMovement"]["minBlinkInterval"]
         timeSinceLastBlink = currentTime - self.lastBlinkTime
-        if timeSinceLastBlink < 1.0:  # Mínimo 1s entre blinks
+        if timeSinceLastBlink < minBlinkInterval:
             blinkProbability *= 0.1
         
         # Decidir se deve piscar
@@ -414,7 +443,10 @@ class CameraFaceLandmarksGenerator:
             self.blinkStartTime = currentTime
             self.lastBlinkTime = currentTime
             self.blinkCounter += 1
-            self.blinkDuration = np.random.uniform(0.1, 0.2)  # 100-200ms
+            
+            # Duração do blink baseada na configuração
+            blinkDurationRange = self.mockCameraConfig["naturalMovement"]["blinkDurationRange"]
+            self.blinkDuration = np.random.uniform(blinkDurationRange[0], blinkDurationRange[1])
             
             # Adicionar ao histórico de blinks
             self.recentBlinkTimes.append(currentTime)
@@ -428,49 +460,21 @@ class CameraFaceLandmarksGenerator:
     def _updateGazeTracking(self):
         """Atualiza direção do olhar baseada no padrão de atenção"""
         
+        # Obter configuração do padrão atual
+        patternConfig = self.attentionPatterns[self.currentAttentionPattern.value]
+        gazeCenter = patternConfig["gazeCenter"]
+        gazeVariation = patternConfig["gazeVariation"]
+        
         # Definir target do gaze baseado no padrão atual
-        if self.currentAttentionPattern == AttentionPattern.FOCUSED:
-            # Focado na estrada - ligeira variação em torno do centro
-            self.gazeTarget["dx"] = np.random.normal(0.0, 0.1)
-            self.gazeTarget["dy"] = np.random.normal(-0.1, 0.1)  # Ligeiramente para baixo
-            
-        elif self.currentAttentionPattern == AttentionPattern.CHECKING_MIRRORS:
-            # Verificar espelhos - olhar para os lados
-            direction = np.random.choice([-1, 1])
-            self.gazeTarget["dx"] = direction * np.random.uniform(0.6, 0.9)
-            self.gazeTarget["dy"] = np.random.uniform(-0.2, 0.1)
-            
-        elif self.currentAttentionPattern == AttentionPattern.LOOKING_ASIDE:
-            # Olhar para o lado
-            self.gazeTarget["dx"] = np.random.uniform(-0.8, 0.8)
-            self.gazeTarget["dy"] = np.random.uniform(-0.3, 0.3)
-            
-        elif self.currentAttentionPattern == AttentionPattern.READING_DASHBOARD:
-            # Ler dashboard - olhar para baixo
-            self.gazeTarget["dx"] = np.random.uniform(-0.3, 0.3)
-            self.gazeTarget["dy"] = np.random.uniform(0.4, 0.7)
-            
-        elif self.currentAttentionPattern == AttentionPattern.DISTRACTED:
-            # Distraído - olhar errático
-            self.gazeTarget["dx"] = np.random.uniform(-0.9, 0.9)
-            self.gazeTarget["dy"] = np.random.uniform(-0.5, 0.5)
-            
-        elif self.currentAttentionPattern == AttentionPattern.DROWSY:
-            # Sonolento - olhar para baixo, movimento lento
-            self.gazeTarget["dx"] = np.random.normal(0.0, 0.2)
-            self.gazeTarget["dy"] = np.random.uniform(0.2, 0.6)
-            
-        elif self.currentAttentionPattern == AttentionPattern.ALERT:
-            # Alerta - movimento rápido mas controlado
-            self.gazeTarget["dx"] = np.random.uniform(-0.4, 0.4)
-            self.gazeTarget["dy"] = np.random.uniform(-0.3, 0.2)
+        self.gazeTarget["dx"] = gazeCenter[0] + np.random.normal(0, gazeVariation)
+        self.gazeTarget["dy"] = gazeCenter[1] + np.random.normal(0, gazeVariation)
         
         # Suavizar movimento do gaze
-        dx_diff = self.gazeTarget["dx"] - self.currentGazeVector["dx"]
-        dy_diff = self.gazeTarget["dy"] - self.currentGazeVector["dy"]
+        dxDiff = self.gazeTarget["dx"] - self.currentGazeVector["dx"]
+        dyDiff = self.gazeTarget["dy"] - self.currentGazeVector["dy"]
         
-        self.currentGazeVector["dx"] += dx_diff * self.gazeSmoothingFactor
-        self.currentGazeVector["dy"] += dy_diff * self.gazeSmoothingFactor
+        self.currentGazeVector["dx"] += dxDiff * self.gazeSmoothingFactor
+        self.currentGazeVector["dy"] += dyDiff * self.gazeSmoothingFactor
         
         # Clipar para range válido
         self.currentGazeVector["dx"] = np.clip(self.currentGazeVector["dx"], -1.0, 1.0)
@@ -482,18 +486,24 @@ class CameraFaceLandmarksGenerator:
         # Micro-movimentos naturais
         self.microMovementPhase += 0.1
         
+        # Configurações de movimento natural
+        naturalMovement = self.mockCameraConfig["naturalMovement"]
+        headMovementStd = naturalMovement["headMovementStd"]
+        microMovementAmplitude = naturalMovement["microMovementAmplitude"]
+        headPositionLimits = naturalMovement["headPositionLimits"]
+        
         # Variação ligeira na posição da cabeça
-        headNoise = np.random.normal(0, 0.005, 3)  # Muito subtil
+        headNoise = np.random.normal(0, headMovementStd, 3)
         microMovement = np.array([
-            0.002 * np.sin(self.microMovementPhase),
-            0.001 * np.cos(self.microMovementPhase * 1.3),
-            0.001 * np.sin(self.microMovementPhase * 0.7)
+            microMovementAmplitude * np.sin(self.microMovementPhase),
+            microMovementAmplitude * np.cos(self.microMovementPhase * 1.3),
+            microMovementAmplitude * np.sin(self.microMovementPhase * 0.7)
         ])
         
         self.headPosition += headNoise + microMovement
         
         # Manter dentro de limites razoáveis
-        self.headPosition = np.clip(self.headPosition, [0.45, 0.45, -0.05], [0.55, 0.55, 0.05])
+        self.headPosition = np.clip(self.headPosition, headPositionLimits["min"], headPositionLimits["max"])
     
     def _generateCurrentLandmarks(self) -> np.ndarray:
         """Gera landmarks atuais baseados no estado facial"""
@@ -502,7 +512,8 @@ class CameraFaceLandmarksGenerator:
         landmarks = self.baseLandmarks.copy()
         
         # Aplicar movimento da cabeça (translação ligeira)
-        headMovement = self.headPosition - np.array([0.5, 0.5, 0.0])
+        faceCenter = np.array(self.anatomyPositions["faceCenter"])
+        headMovement = self.headPosition - faceCenter
         landmarks += headMovement
         
         # Aplicar efeito do gaze nos olhos
@@ -513,7 +524,8 @@ class CameraFaceLandmarksGenerator:
             self._applyBlinkToEyes(landmarks)
         
         # Adicionar variação natural muito ligeira
-        naturalVariation = np.random.normal(0, 0.001, landmarks.shape)
+        naturalVariationStd = self.mockCameraConfig["naturalMovement"]["naturalVariationStd"]
+        naturalVariation = np.random.normal(0, naturalVariationStd, landmarks.shape)
         landmarks += naturalVariation
         
         # Aplicar anomalias se ativas
@@ -530,27 +542,30 @@ class CameraFaceLandmarksGenerator:
         
         gazeShift = np.array([self.currentGazeVector["dx"] * 0.01, self.currentGazeVector["dy"] * 0.01, 0])
         
-        # Aplicar aos olhos (índices aproximados)
-        landmarks[36:48] += gazeShift  # Ambos os olhos
+        # Aplicar aos olhos usando os ranges configurados
+        leftEyeRange = self.landmarkRanges["leftEye"]
+        rightEyeRange = self.landmarkRanges["rightEye"]
+        
+        landmarks[leftEyeRange[0]:leftEyeRange[1]+1] += gazeShift
+        landmarks[rightEyeRange[0]:rightEyeRange[1]+1] += gazeShift
     
     def _applyBlinkToEyes(self, landmarks: np.ndarray):
         """Aplica efeito do blink aos landmarks dos olhos"""
         
         # Durante blink, reduzir height dos olhos
-        blinkIntensity = 0.02  # Redução em Y
+        blinkIntensity = 0.02
         
-        # Aplicar aos pontos superiores e inferiores dos olhos
-        # Olho esquerdo (36-41)
-        landmarks[37, 1] += blinkIntensity  # Ponto superior
-        landmarks[38, 1] += blinkIntensity
-        landmarks[40, 1] -= blinkIntensity  # Ponto inferior
-        landmarks[41, 1] -= blinkIntensity
+        leftEyeRange = self.landmarkRanges["leftEye"]
+        rightEyeRange = self.landmarkRanges["rightEye"]
         
-        # Olho direito (42-47)
-        landmarks[43, 1] += blinkIntensity  # Ponto superior
-        landmarks[44, 1] += blinkIntensity
-        landmarks[46, 1] -= blinkIntensity  # Ponto inferior
-        landmarks[47, 1] -= blinkIntensity
+        # Aplicar efeito aos pontos dos olhos
+        for i in range(leftEyeRange[0], leftEyeRange[1] + 1):
+            if i < len(landmarks):
+                landmarks[i, 1] += blinkIntensity * np.sin((i - leftEyeRange[0]) * np.pi / (leftEyeRange[1] - leftEyeRange[0]))
+        
+        for i in range(rightEyeRange[0], rightEyeRange[1] + 1):
+            if i < len(landmarks):
+                landmarks[i, 1] += blinkIntensity * np.sin((i - rightEyeRange[0]) * np.pi / (rightEyeRange[1] - rightEyeRange[0]))
     
     def _calculateEAR(self, landmarks: np.ndarray) -> float:
         """Calcula Eye Aspect Ratio baseado nos landmarks dos olhos"""
@@ -559,13 +574,9 @@ class CameraFaceLandmarksGenerator:
             # Durante blink, EAR muito baixo
             return np.random.uniform(0.05, 0.12)
         else:
-            # EAR normal com ligeira variação
-            baseEar = 0.3
-            
-            if self.currentAttentionPattern == AttentionPattern.DROWSY:
-                baseEar = 0.2  # EAR mais baixo quando sonolento
-            elif self.currentAttentionPattern == AttentionPattern.ALERT:
-                baseEar = 0.35  # EAR mais alto quando alerta
+            # EAR normal baseado no padrão de atenção
+            patternConfig = self.attentionPatterns[self.currentAttentionPattern.value]
+            baseEar = patternConfig["earBase"]
             
             # Adicionar variação natural
             ear = baseEar + np.random.normal(0, 0.03)
@@ -584,29 +595,11 @@ class CameraFaceLandmarksGenerator:
         blinkRate = len(recentBlinks)
         
         # Ajustar baseado no padrão de atenção
-        if self.currentAttentionPattern == AttentionPattern.DROWSY:
-            blinkRate *= 0.4  # Significativamente menos blinks
-        elif self.currentAttentionPattern == AttentionPattern.ALERT:
-            blinkRate *= 1.8  # Mais blinks
+        patternConfig = self.attentionPatterns[self.currentAttentionPattern.value]
+        blinkMultiplier = patternConfig["blinkMultiplier"]
+        blinkRate *= blinkMultiplier
         
         return max(0.0, blinkRate)
-    
-    def _calculateDetectionConfidence(self) -> float:
-        """Calcula confiança da deteção baseada em qualidade simulada"""
-        
-        baseConfidence = 0.85
-        
-        # Reduzir confiança durante anomalias
-        if self.currentAnomalyType == CameraAnomalyType.POOR_DETECTION:
-            baseConfidence = 0.3
-        elif self.currentAnomalyType == CameraAnomalyType.EXCESSIVE_MOVEMENT:
-            baseConfidence = 0.6
-        elif self.currentAnomalyType != CameraAnomalyType.NORMAL:
-            baseConfidence *= 0.9
-        
-        # Adicionar variação natural
-        confidence = baseConfidence + np.random.normal(0, 0.05)
-        return np.clip(confidence, 0.1, 1.0)
     
     def _generateMockImage(self, landmarks: np.ndarray, ear: float) -> str:
         """
@@ -621,8 +614,14 @@ class CameraFaceLandmarksGenerator:
         """
         
         try:
+            # Configurações da imagem
+            mockImageConfig = self.mockCameraConfig["mockImage"]
+            backgroundColor = mockImageConfig["backgroundColor"]
+            colors = mockImageConfig["colors"]
+            lineWidths = mockImageConfig["lineWidths"]
+            
             # Criar imagem
-            img = Image.new('RGB', self.imageSize, color='lightblue')
+            img = Image.new('RGB', self.imageSize, color=backgroundColor)
             draw = ImageDraw.Draw(img)
             
             # Converter landmarks normalizados para pixels
@@ -632,18 +631,18 @@ class CameraFaceLandmarksGenerator:
             pixelLandmarks[:, 1] *= imgHeight  # Y para pixels
             
             # Desenhar contorno facial
-            self._drawFaceOutline(draw, pixelLandmarks)
+            self._drawFaceOutline(draw, pixelLandmarks, colors, lineWidths)
             
             # Desenhar features faciais
-            self._drawEyebrows(draw, pixelLandmarks)
-            self._drawNose(draw, pixelLandmarks)
-            self._drawMouth(draw, pixelLandmarks)
+            self._drawEyebrows(draw, pixelLandmarks, colors, lineWidths)
+            self._drawNose(draw, pixelLandmarks, colors, lineWidths)
+            self._drawMouth(draw, pixelLandmarks, colors, lineWidths)
             
             # Desenhar olhos (coordenados com EAR)
-            self._drawEyes(draw, pixelLandmarks, ear)
+            self._drawEyes(draw, pixelLandmarks, ear, colors, lineWidths)
             
             # Adicionar pupils baseadas no gaze
-            self._drawPupils(draw, pixelLandmarks, ear)
+            self._drawPupils(draw, pixelLandmarks, ear, colors)
             
             # Converter para base64
             buffer = io.BytesIO()
@@ -657,99 +656,107 @@ class CameraFaceLandmarksGenerator:
             # Retornar placeholder em caso de erro
             return "mock_camera_frame_error"
     
-    def _drawFaceOutline(self, draw: ImageDraw.Draw, landmarks: np.ndarray):
+    def _drawFaceOutline(self, draw: ImageDraw.Draw, landmarks: np.ndarray, colors: Dict, lineWidths: Dict):
         """Desenha contorno facial baseado nos landmarks"""
         
-        # Usar landmarks 0-16 para contorno
-        facePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(17)]
+        # Usar range configurado para contorno
+        faceOutlineRange = self.landmarkRanges["faceOutline"]
+        facePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(faceOutlineRange[0], faceOutlineRange[1] + 1)]
         
         if len(facePoints) > 2:
-            draw.polygon(facePoints, outline='black', width=2)
+            draw.polygon(facePoints, outline=colors["faceOutline"], width=lineWidths["faceOutline"])
     
-    def _drawEyebrows(self, draw: ImageDraw.Draw, landmarks: np.ndarray):
+    def _drawEyebrows(self, draw: ImageDraw.Draw, landmarks: np.ndarray, colors: Dict, lineWidths: Dict):
         """Desenha sobrancelhas"""
         
-        # Sobrancelha esquerda (landmarks 17-21)
-        leftBrow = [(landmarks[i, 0], landmarks[i, 1]) for i in range(17, 22)]
+        # Usar ranges configurados para sobrancelhas
+        leftBrowRange = self.landmarkRanges["leftEyebrow"]
+        rightBrowRange = self.landmarkRanges["rightEyebrow"]
+        
+        # Sobrancelha esquerda
+        leftBrow = [(landmarks[i, 0], landmarks[i, 1]) for i in range(leftBrowRange[0], leftBrowRange[1] + 1)]
         if len(leftBrow) > 1:
             for i in range(len(leftBrow) - 1):
-                draw.line([leftBrow[i], leftBrow[i+1]], fill='darkbrown', width=2)
+                draw.line([leftBrow[i], leftBrow[i+1]], fill=colors["eyebrows"], width=lineWidths["eyebrows"])
         
-        # Sobrancelha direita (landmarks 22-26)
-        rightBrow = [(landmarks[i, 0], landmarks[i, 1]) for i in range(22, 27)]
+        # Sobrancelha direita
+        rightBrow = [(landmarks[i, 0], landmarks[i, 1]) for i in range(rightBrowRange[0], rightBrowRange[1] + 1)]
         if len(rightBrow) > 1:
             for i in range(len(rightBrow) - 1):
-                draw.line([rightBrow[i], rightBrow[i+1]], fill='darkbrown', width=2)
+                draw.line([rightBrow[i], rightBrow[i+1]], fill=colors["eyebrows"], width=lineWidths["eyebrows"])
     
-    def _drawNose(self, draw: ImageDraw.Draw, landmarks: np.ndarray):
+    def _drawNose(self, draw: ImageDraw.Draw, landmarks: np.ndarray, colors: Dict, lineWidths: Dict):
         """Desenha nariz"""
         
-        # Ponte do nariz (landmarks 27-35)
-        nosePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(27, 36)]
+        # Usar ranges configurados para nariz
+        noseBridgeRange = self.landmarkRanges["noseBridge"]
+        noseNostrilsRange = self.landmarkRanges["noseNostrils"]
         
-        if len(nosePoints) >= 3:
+        # Ponte do nariz
+        bridgePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(noseBridgeRange[0], noseBridgeRange[1] + 1)]
+        
+        if len(bridgePoints) >= 2:
             # Desenhar ponte
-            for i in range(3):
-                if i < len(nosePoints) - 1:
-                    draw.line([nosePoints[i], nosePoints[i+1]], fill='black', width=1)
-            
-            # Desenhar narinas
-            if len(nosePoints) >= 6:
-                # Narina esquerda
-                draw.ellipse([nosePoints[3][0]-2, nosePoints[3][1]-1, 
-                             nosePoints[3][0]+2, nosePoints[3][1]+1], 
-                             outline='black')
-                # Narina direita  
-                draw.ellipse([nosePoints[6][0]-2, nosePoints[6][1]-1,
-                             nosePoints[6][0]+2, nosePoints[6][1]+1], 
-                             outline='black')
+            for i in range(len(bridgePoints) - 1):
+                draw.line([bridgePoints[i], bridgePoints[i+1]], fill=colors["nose"], width=lineWidths["nose"])
+        
+        # Narinas
+        nostrilPoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(noseNostrilsRange[0], noseNostrilsRange[1] + 1)]
+        if len(nostrilPoints) >= 2:
+            nostrilSize = 2
+            for point in nostrilPoints[:2]:  # Desenhar apenas as primeiras duas narinas
+                draw.ellipse([point[0]-nostrilSize, point[1]-nostrilSize, 
+                             point[0]+nostrilSize, point[1]+nostrilSize], 
+                             outline=colors["nose"])
     
-    def _drawMouth(self, draw: ImageDraw.Draw, landmarks: np.ndarray):
+    def _drawMouth(self, draw: ImageDraw.Draw, landmarks: np.ndarray, colors: Dict, lineWidths: Dict):
         """Desenha boca"""
         
-        # Contorno da boca (landmarks 48-67)
-        mouthPoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(48, 60)]
+        # Usar range configurado para boca
+        outerMouthRange = self.landmarkRanges["outerMouth"]
+        mouthPoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(outerMouthRange[0], outerMouthRange[1] + 1)]
         
-        if len(mouthPoints) >= 8:
+        if len(mouthPoints) >= 3:
             # Desenhar contorno exterior
             mouthPoints.append(mouthPoints[0])  # Fechar polygon
-            draw.polygon(mouthPoints, outline='red', width=2)
+            draw.polygon(mouthPoints, outline=colors["mouth"], width=lineWidths["mouth"])
     
-    def _drawEyes(self, draw: ImageDraw.Draw, landmarks: np.ndarray, ear: float):
+    def _drawEyes(self, draw: ImageDraw.Draw, landmarks: np.ndarray, ear: float, colors: Dict, lineWidths: Dict):
         """Desenha olhos coordenados com EAR"""
         
-        # Olho esquerdo (landmarks 36-41)
-        leftEyePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(36, 42)]
+        # Usar ranges configurados para olhos
+        leftEyeRange = self.landmarkRanges["leftEye"]
+        rightEyeRange = self.landmarkRanges["rightEye"]
         
-        # Olho direito (landmarks 42-47)
-        rightEyePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(42, 48)]
+        leftEyePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(leftEyeRange[0], leftEyeRange[1] + 1)]
+        rightEyePoints = [(landmarks[i, 0], landmarks[i, 1]) for i in range(rightEyeRange[0], rightEyeRange[1] + 1)]
         
         # Determinar se olhos estão fechados baseado em EAR
         eyesClosed = ear < 0.15 or self.isBlinking
         
         if eyesClosed:
             # Desenhar olhos fechados (linhas horizontais)
-            if len(leftEyePoints) >= 4:
-                draw.line([leftEyePoints[0], leftEyePoints[3]], fill='black', width=3)
-            if len(rightEyePoints) >= 4:
-                draw.line([rightEyePoints[0], rightEyePoints[3]], fill='black', width=3)
+            if len(leftEyePoints) >= 2:
+                draw.line([leftEyePoints[0], leftEyePoints[-1]], fill=colors["eyeClosed"], width=lineWidths["eyeClosed"])
+            if len(rightEyePoints) >= 2:
+                draw.line([rightEyePoints[0], rightEyePoints[-1]], fill=colors["eyeClosed"], width=lineWidths["eyeClosed"])
         else:
             # Desenhar olhos abertos (elipses)
-            if len(leftEyePoints) >= 6:
+            if len(leftEyePoints) >= 3:
                 # Calcular bounding box do olho esquerdo
                 leftX = [p[0] for p in leftEyePoints]
                 leftY = [p[1] for p in leftEyePoints]
                 leftBbox = [min(leftX), min(leftY), max(leftX), max(leftY)]
-                draw.ellipse(leftBbox, outline='black', fill='white', width=2)
+                draw.ellipse(leftBbox, outline=colors["eyeOpen"], fill=colors["eyeOpen"], width=lineWidths["eyeOpen"])
             
-            if len(rightEyePoints) >= 6:
+            if len(rightEyePoints) >= 3:
                 # Calcular bounding box do olho direito
                 rightX = [p[0] for p in rightEyePoints]
                 rightY = [p[1] for p in rightEyePoints]
                 rightBbox = [min(rightX), min(rightY), max(rightX), max(rightY)]
-                draw.ellipse(rightBbox, outline='black', fill='white', width=2)
+                draw.ellipse(rightBbox, outline=colors["eyeOpen"], fill=colors["eyeOpen"], width=lineWidths["eyeOpen"])
     
-    def _drawPupils(self, draw: ImageDraw.Draw, landmarks: np.ndarray, ear: float):
+    def _drawPupils(self, draw: ImageDraw.Draw, landmarks: np.ndarray, ear: float, colors: Dict):
         """Desenha pupilas baseadas no gaze direction"""
         
         # Só desenhar pupilas se olhos estiverem abertos
@@ -760,45 +767,49 @@ class CameraFaceLandmarksGenerator:
         gazeOffsetX = self.currentGazeVector["dx"] * 3  # Pixels
         gazeOffsetY = self.currentGazeVector["dy"] * 2  # Pixels
         
+        # Usar centros dos olhos configurados
+        leftEyeCenter = self.anatomyPositions["leftEyeCenter"]
+        rightEyeCenter = self.anatomyPositions["rightEyeCenter"]
+        
+        # Converter para pixels
+        imgWidth, imgHeight = self.imageSize
+        leftEyeCenterPx = [leftEyeCenter[0] * imgWidth, leftEyeCenter[1] * imgHeight]
+        rightEyeCenterPx = [rightEyeCenter[0] * imgWidth, rightEyeCenter[1] * imgHeight]
+        
         # Pupila esquerda
-        if len(landmarks) > 39:
-            eyeCenterX = landmarks[39, 0]  # Centro aproximado do olho esquerdo
-            eyeCenterY = landmarks[39, 1]
-            
-            pupilX = eyeCenterX + gazeOffsetX
-            pupilY = eyeCenterY + gazeOffsetY
-            
-            draw.ellipse([pupilX-2, pupilY-2, pupilX+2, pupilY+2], 
-                        fill='black')
+        pupilX = leftEyeCenterPx[0] + gazeOffsetX
+        pupilY = leftEyeCenterPx[1] + gazeOffsetY
+        draw.ellipse([pupilX-2, pupilY-2, pupilX+2, pupilY+2], fill=colors["pupil"])
         
         # Pupila direita
-        if len(landmarks) > 45:
-            eyeCenterX = landmarks[45, 0]  # Centro aproximado do olho direito
-            eyeCenterY = landmarks[45, 1]
-            
-            pupilX = eyeCenterX + gazeOffsetX
-            pupilY = eyeCenterY + gazeOffsetY
-            
-            draw.ellipse([pupilX-2, pupilY-2, pupilX+2, pupilY+2], 
-                        fill='black')
+        pupilX = rightEyeCenterPx[0] + gazeOffsetX
+        pupilY = rightEyeCenterPx[1] + gazeOffsetY
+        draw.ellipse([pupilX-2, pupilY-2, pupilX+2, pupilY+2], fill=colors["pupil"])
     
     def _applyAnomalies(self, landmarks: np.ndarray) -> np.ndarray:
         """Aplica anomalias específicas aos landmarks"""
         
+        anomalyConfig = self.anomalyTypes[self.currentAnomalyType.value.lower()]
+        
         if self.currentAnomalyType == CameraAnomalyType.EXCESSIVE_MOVEMENT:
-            # Movimento excessivo - maior variação
-            movement = np.random.normal(0, 0.01, landmarks.shape)
+            # Movimento excessivo - usar configuração centralizada
+            movementMultiplier = anomalyConfig.get("movementMultiplier", 10.0)
+            naturalVariationStd = self.mockCameraConfig["naturalMovement"]["naturalVariationStd"]
+            movement = np.random.normal(0, naturalVariationStd * movementMultiplier, landmarks.shape)
             landmarks += movement
             
         elif self.currentAnomalyType == CameraAnomalyType.POOR_DETECTION:
-            # Deteção pobre - landmarks menos precisos
-            noise = np.random.normal(0, 0.005, landmarks.shape)
+            # Deteção pobre - usar multiplicador de ruído configurado
+            noiseMultiplier = anomalyConfig.get("noiseMultiplier", 5.0)
+            naturalVariationStd = self.mockCameraConfig["naturalMovement"]["naturalVariationStd"]
+            noise = np.random.normal(0, naturalVariationStd * noiseMultiplier, landmarks.shape)
             landmarks += noise
             
         elif self.currentAnomalyType == CameraAnomalyType.GAZE_DRIFT:
-            # Gaze errático - forçar gaze extremo
-            self.currentGazeVector["dx"] = np.random.uniform(-0.9, 0.9)
-            self.currentGazeVector["dy"] = np.random.uniform(-0.9, 0.9)
+            # Gaze errático - usar força configurada
+            gazeForce = anomalyConfig.get("gazeForce", 0.9)
+            self.currentGazeVector["dx"] = np.random.uniform(-gazeForce, gazeForce)
+            self.currentGazeVector["dy"] = np.random.uniform(-gazeForce, gazeForce)
         
         return landmarks
     
@@ -824,30 +835,35 @@ class CameraFaceLandmarksGenerator:
         
         # Probabilidade de anomalia
         if np.random.random() < self.anomalyChance:
-            # Escolher tipo de anomalia
-            anomalyTypes = [
-                CameraAnomalyType.LOW_BLINK_RATE,        # 30% - Sonolência
-                CameraAnomalyType.GAZE_DRIFT,            # 25% - Distração
-                CameraAnomalyType.POOR_DETECTION,        # 20% - Qualidade baixa
-                CameraAnomalyType.EXCESSIVE_MOVEMENT,    # 15% - Movimento excessivo
-                CameraAnomalyType.HIGH_BLINK_RATE,       # 10% - Stress
-            ]
+            # Escolher tipo de anomalia baseado nas probabilidades configuradas
+            anomalyTypes = []
+            weights = []
             
-            weights = [0.30, 0.25, 0.20, 0.15, 0.10]
-            self.currentAnomalyType = np.random.choice(anomalyTypes, p=weights)
+            for anomalyName, config in self.anomalyTypes.items():
+                try:
+                    anomalyType = CameraAnomalyType(anomalyName)
+                    if anomalyType != CameraAnomalyType.NORMAL:
+                        anomalyTypes.append(anomalyType)
+                        weights.append(config["probability"])
+                except ValueError:
+                    continue
             
-            self.anomalyStartTime = currentTime
-            self.lastAnomalyTime = currentTime
-            
-            # Duração baseada no tipo
-            if self.currentAnomalyType == CameraAnomalyType.LOW_BLINK_RATE:
-                self.anomalyDuration = np.random.uniform(15.0, 45.0)  # Longa para sonolência
-            elif self.currentAnomalyType == CameraAnomalyType.POOR_DETECTION:
-                self.anomalyDuration = np.random.uniform(5.0, 15.0)   # Média
-            else:
-                self.anomalyDuration = np.random.uniform(3.0, 10.0)   # Curta
-            
-            self.logger.warning(f"Camera anomaly started: {self.currentAnomalyType.value} for {self.anomalyDuration:.1f}s")
+            if anomalyTypes and weights:
+                # Normalizar pesos
+                totalWeight = sum(weights)
+                normalizedWeights = [w / totalWeight for w in weights]
+                
+                self.currentAnomalyType = np.random.choice(anomalyTypes, p=normalizedWeights)
+                
+                self.anomalyStartTime = currentTime
+                self.lastAnomalyTime = currentTime
+                
+                # Duração baseada na configuração
+                anomalyConfig = self.anomalyTypes[self.currentAnomalyType.value.lower()]
+                durationRange = anomalyConfig["durationRange"]
+                self.anomalyDuration = np.random.uniform(durationRange[0], durationRange[1])
+                
+                self.logger.warning(f"Camera anomaly started: {self.currentAnomalyType.value} for {self.anomalyDuration:.1f}s")
     
     def forceAnomaly(self, anomalyType: str, duration: float = 10.0):
         """
@@ -918,7 +934,6 @@ class CameraFaceLandmarksGenerator:
                 "gazeTarget": self.gazeTarget.copy()
             },
             "detectionQuality": {
-                "confidence": self._calculateDetectionConfidence(),
                 "imageSize": self.imageSize
             },
             "config": {
@@ -955,7 +970,7 @@ class CameraFaceLandmarksGenerator:
         self.gazeTarget = {"dx": 0.0, "dy": 0.0}
         
         # Reset posição
-        self.headPosition = np.array([0.5, 0.5, 0.0])
+        self.headPosition = np.array(self.anatomyPositions["faceCenter"])
         self.headRotation = np.array([0.0, 0.0, 0.0])
         self.microMovementPhase = 0.0
         

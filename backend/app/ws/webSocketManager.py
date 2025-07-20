@@ -318,8 +318,7 @@ class WebSocketManager(SignalControlInterface):
             "signalType": data["signalType"],
             "dataType": dataType,
             "timestamp": data["timestamp"],
-            "value": data["value"],
-            "anomalies": data.get("anomalies", [])
+            "value": data["value"]
         }
         
         # Enviar para todos os clientes

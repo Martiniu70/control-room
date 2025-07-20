@@ -330,6 +330,177 @@ class MockZeroMQConfig:
                 "channelNames": ["ch0", "ch1", "ch2", "ch3"],
                 "amplitudeBase": 20,               # Amplitude base μV
                 "noiseStd": 5                      # Ruído μV
+            },
+            "camera": {
+                # Configurações gerais
+                "patternTransitionChance": 0.1,     # 10% chance de mudar padrão de atenção
+                "blinkVariationStd": 0.03,          # Desvio padrão variação EAR
+                "gazeVariationStd": 0.1,            # Desvio padrão variação gaze
+                
+                # Landmarks anatomy mapping (índices MediaPipe)
+                "landmarkRanges": {
+                    "faceOutline": [0, 64],         # Contorno facial
+                    "eyebrows": [64, 83],           # Sobrancelhas (esquerda + direita)
+                    "leftEyebrow": [64, 73],        # Sobrancelha esquerda
+                    "rightEyebrow": [74, 83],       # Sobrancelha direita
+                    "nose": [84, 100],              # Nariz completo
+                    "noseBridge": [84, 91],         # Ponte do nariz
+                    "noseNostrils": [92, 100],      # Narinas
+                    "leftEye": [101, 111],          # Olho esquerdo
+                    "rightEye": [112, 122],         # Olho direito
+                    "mouth": [123, 161],            # Boca completa
+                    "outerMouth": [123, 145],       # Contorno exterior boca
+                    "innerMouth": [146, 161],       # Contorno interior boca
+                    "remaining": [162, 477]         # Landmarks restantes (superfície facial)
+                },
+                
+                # Posições anatômicas base (coordenadas normalizadas 0-1)
+                "anatomyPositions": {
+                    "faceCenter": [0.5, 0.5, 0.0],
+                    "faceWidth": 0.4,               # Largura da face (±0.2 do centro)
+                    "faceHeight": 0.7,              # Altura da face
+                    "leftEyeCenter": [0.37, 0.45, 0.0],
+                    "rightEyeCenter": [0.63, 0.45, 0.0],
+                    "eyeWidth": 0.06,               # Largura do olho
+                    "eyeHeight": 0.03,              # Altura do olho
+                    "noseCenter": [0.5, 0.52, 0.01],
+                    "noseTip": [0.5, 0.59, 0.0],
+                    "mouthCenter": [0.5, 0.75, 0.0],
+                    "mouthWidth": 0.08,
+                    "mouthHeight": 0.03
+                },
+                
+                # Padrões de atenção e suas características
+                "attentionPatterns": {
+                    "focused": {
+                        "gazeCenter": [0.0, -0.1],      # Ligeiramente para baixo
+                        "gazeVariation": 0.1,            # Baixa variação
+                        "earBase": 0.3,                  # EAR normal
+                        "blinkMultiplier": 1.0,          # Blink rate normal
+                        "probability": 0.60,             # 60% do tempo
+                        "durationRange": [20.0, 60.0]    # 20-60s
+                    },
+                    "drowsy": {
+                        "gazeCenter": [0.0, 0.4],        # Olhar para baixo
+                        "gazeVariation": 0.2,            # Movimento lento
+                        "earBase": 0.2,                  # EAR reduzido
+                        "blinkMultiplier": 0.4,          # Menos blinks
+                        "probability": 0.02,             # 2% do tempo
+                        "durationRange": [10.0, 30.0]    # 10-30s
+                    },
+                    "alert": {
+                        "gazeCenter": [0.0, -0.2],       # Olhar ligeiramente para cima
+                        "gazeVariation": 0.15,           # Movimento controlado
+                        "earBase": 0.35,                 # EAR elevado
+                        "blinkMultiplier": 1.8,          # Mais blinks
+                        "probability": 0.01,             # 1% do tempo
+                        "durationRange": [5.0, 15.0]     # 5-15s
+                    },
+                    "checkingMirrors": {
+                        "gazeCenter": [0.75, -0.1],      # Para os lados
+                        "gazeVariation": 0.3,            # Movimento amplo
+                        "earBase": 0.3,                  # EAR normal
+                        "blinkMultiplier": 1.2,          # Ligeiramente mais blinks
+                        "probability": 0.15,             # 15% do tempo
+                        "durationRange": [2.0, 8.0]      # 2-8s
+                    },
+                    "lookingAside": {
+                        "gazeCenter": [0.6, 0.2],        # Lado e baixo
+                        "gazeVariation": 0.4,            # Movimento amplo
+                        "earBase": 0.28,                 # Ligeiramente reduzido
+                        "blinkMultiplier": 1.1,          # Ligeiramente mais blinks
+                        "probability": 0.10,             # 10% do tempo
+                        "durationRange": [3.0, 12.0]     # 3-12s
+                    },
+                    "readingDashboard": {
+                        "gazeCenter": [0.0, 0.55],       # Para baixo
+                        "gazeVariation": 0.25,           # Movimento moderado
+                        "earBase": 0.32,                 # EAR normal
+                        "blinkMultiplier": 1.3,          # Mais blinks (concentração)
+                        "probability": 0.08,             # 8% do tempo
+                        "durationRange": [2.0, 8.0]      # 2-8s
+                    },
+                    "distracted": {
+                        "gazeCenter": [0.0, 0.0],        # Centro mas errático
+                        "gazeVariation": 0.8,            # Movimento muito amplo
+                        "earBase": 0.25,                 # EAR ligeiramente reduzido
+                        "blinkMultiplier": 1.5,          # Mais blinks (stress)
+                        "probability": 0.04,             # 4% do tempo
+                        "durationRange": [5.0, 15.0]     # 5-15s
+                    }
+                },
+                
+                # Tipos de anomalias e suas características
+                "anomalyTypes": {
+                    "lowBlinkRate": {
+                        "blinkMultiplier": 0.3,          # Drasticamente menos blinks
+                        "earReduction": 0.1,             # EAR mais baixo
+                        "probability": 0.30,             # 30% das anomalias
+                        "durationRange": [15.0, 45.0]    # Longa duração
+                    },
+                    "gazeDrift": {
+                        "gazeForce": 0.9,               # Gaze extremo
+                        "gazeVariation": 0.5,           # Movimento errático
+                        "probability": 0.25,            # 25% das anomalias
+                        "durationRange": [3.0, 10.0]    # Duração curta
+                    },
+                    "poorDetection": {
+                        "confidenceReduction": 0.5,     # Confidence baixo
+                        "noiseMultiplier": 5.0,         # Mais ruído nos landmarks
+                        "probability": 0.20,            # 20% das anomalias
+                        "durationRange": [5.0, 15.0]    # Duração média
+                    },
+                    "excessiveMovement": {
+                        "movementMultiplier": 10.0,     # Movimento amplificado
+                        "confidenceReduction": 0.3,    # Confidence moderadamente baixo
+                        "probability": 0.15,            # 15% das anomalias
+                        "durationRange": [3.0, 10.0]    # Duração curta
+                    },
+                    "highBlinkRate": {
+                        "blinkMultiplier": 3.0,         # Muito mais blinks
+                        "earVariation": 0.1,            # EAR mais variável
+                        "probability": 0.10,            # 10% das anomalias
+                        "durationRange": [5.0, 20.0]    # Duração média
+                    }
+                },
+                
+                # Configurações de movimento natural
+                "naturalMovement": {
+                    "headMovementStd": 0.005,           # Desvio padrão movimento cabeça
+                    "microMovementAmplitude": 0.002,    # Amplitude micro-movimentos
+                    "naturalVariationStd": 0.001,       # Variação natural landmarks
+                    "gazeSmoothingFactor": 0.1,         # Suavização movimento gaze
+                    "blinkDurationRange": [0.1, 0.2],   # Duração blink (100-200ms)
+                    "minBlinkInterval": 1.0,            # Mínimo entre blinks (1s)
+                    "headPositionLimits": {
+                        "min": [0.45, 0.45, -0.05],     # Limites mínimos posição cabeça
+                        "max": [0.55, 0.55, 0.05]       # Limites máximos posição cabeça
+                    }
+                },
+                
+                # Configurações de imagem mock
+                "mockImage": {
+                    "size": [200, 200],                 # Dimensões da imagem
+                    "quality": 85,                      # Qualidade JPEG
+                    "backgroundColor": "lightblue",     # Cor de fundo
+                    "colors": {
+                        "faceOutline": "black",
+                        "eyebrows": "darkbrown",
+                        "nose": "black",
+                        "mouth": "red",
+                        "eyeOpen": "white",
+                        "eyeClosed": "black",
+                        "pupil": "black"
+                    },
+                    "lineWidths": {
+                        "faceOutline": 2,
+                        "eyebrows": 2,
+                        "nose": 1,
+                        "mouth": 2,
+                        "eyeOpen": 2,
+                        "eyeClosed": 3
+                    }
+                }
             }
         }
         
@@ -498,7 +669,7 @@ class SignalConfig:
                 "samplingRate": 100,                    # Hz conforme CardioWheel
                 "bufferSize": 3000,                     # 30s * 100Hz  
                 "normalRange": (-32768, 32767),         # Valores 16-bit ADC
-                "physicalRange": (-2000.0, 2000.0),    # ±2000°/s após conversão
+                "physicalRange": (-2000.0, 2000.0),     # ±2000°/s após conversão
                 "axes": ["x", "y", "z"],                # Eixos do giroscópio
                 "conversionFactor": 0.061,              # ADC para °/s (aprox 2000°/s / 32768)
                 "baselineOffset": 0,                    # Offset para calibração
@@ -537,7 +708,6 @@ class SignalConfig:
                 "landmarksCount": 478,          # Pontos MediaPipe
                 "landmarksDimensions": 3,       # x, y, z
                 "normalizedCoords": True,       # Coordenadas 0-1
-                "detectionThreshold": 0.5,      # Confiança mínima
                 "stabilityThreshold": 0.02      # Movimento máximo entre frames (normalizado)
             },
             "gaze": {
@@ -710,7 +880,7 @@ class SignalConfig:
                 "accBaselineNoise": 5.0,            # Ruído baseline ACC em ADC units
                 "gyrBaselineNoise": 2.0,            # Ruído baseline GYR em ADC units
                 "accGravityOffset": {               # Offset gravitacional por eixo
-                    "x": 0, "y": 0, "z": 8192      # Z = ~1g em ADC (aprox 32768/4)
+                    "x": 0, "y": 0, "z": 8192       # Z = ~1g em ADC (aprox 32768/4)
                 },
                 "gyrZeroOffset": {                  # Offset zero por eixo
                     "x": 0, "y": 0, "z": 0
@@ -795,13 +965,13 @@ class SignalControlConfig:
 
         self.componentSignalMappings = {
             # Componentes que trabalham com tópicos ZeroMQ
-            "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
-            "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
-            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"] 
+            "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"]
+            "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"]
+            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"] 
             
             # Componentes que trabalham com signal types
-            "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
-            "websocket": self.signalTypes.copy()     # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+            "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
+            "websocket": self.signalTypes.copy()     # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
         }
         
         self.defaultActiveStates = {

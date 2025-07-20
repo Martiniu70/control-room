@@ -128,19 +128,19 @@ class ZeroMQFormatter:
         
         Input esperado:
         {
-            "landmarks": [[x1,y1,z1], [x2,y2,z2], ...],  # 478 pontos faciais
-            "gaze_vector": {"dx": 0.2, "dy": -0.1},      # Direção do olhar
-            "ear": 0.25,                                  # Eye Aspect Ratio
-            "blink_rate": 18,                             # Blinks por minuto
-            "confidence": 0.85,                           # Confiança da deteção
-            "frame_b64": "base64_data"                    # Imagem (opcional)
+            "landmarks": [[x1,y1,z1], [x2,y2,z2], ...],     # 478 pontos faciais
+            "gaze_vector": {"dx": 0.2, "dy": -0.1},         # Direção do olhar
+            "ear": 0.25,                                    # Eye Aspect Ratio
+            "blink_rate": 18,                               # Blinks por minuto
+            "blink_counter": 34,                            # Número de blinks
+            "frame_b64": "base64_data"                      # Imagem (opcional)
         }
         
         Output ZeroMQ:
         {
             "ts": "timestamp",
-            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
-            "data": [[flattened_landmarks, gaze_dx, gaze_dy, ear, blink_rate, confidence]]
+            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "blink_counter", "frame_b64"],
+            "data": [[flattened_landmarks, gaze_dx, gaze_dy, ear, blink_rate, blink_counter, frame_b64]]
         }
         """
         
@@ -149,7 +149,8 @@ class ZeroMQFormatter:
         gazeVector = rawData.get("gaze_vector", {})
         ear = rawData.get("ear")
         blinkRate = rawData.get("blink_rate")
-        confidence = rawData.get("confidence")
+        blinkCounter = rawData.get("blink_counter")
+        frameB64 = rawData.get("frame_b64", "")  # Imagem opcional
         
         # Validações básicas
         if landmarks is None:
@@ -158,7 +159,7 @@ class ZeroMQFormatter:
         if not isinstance(landmarks, list) or len(landmarks) != 478:
             raise ValueError(f"Expected 478 landmarks, got {len(landmarks) if isinstance(landmarks, list) else 'not list'}")
         
-        if ear is None or blinkRate is None or confidence is None:
+        if ear is None or blinkRate is None:
             raise ValueError("EAR, blink_rate and confidence are required")
         
         if not isinstance(gazeVector, dict) or "dx" not in gazeVector or "dy" not in gazeVector:
@@ -170,9 +171,6 @@ class ZeroMQFormatter:
         
         if not (0 <= blinkRate <= 120):
             raise ValueError(f"Blink rate {blinkRate} fora do range válido [0, 120]")
-        
-        if not (0.0 <= confidence <= 1.0):
-            raise ValueError(f"Confidence {confidence} fora do range válido [0.0, 1.0]")
         
         gazeDx = float(gazeVector["dx"])
         gazeDy = float(gazeVector["dy"])
@@ -199,14 +197,15 @@ class ZeroMQFormatter:
         
         return {
             "ts": timestamp,
-            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
+            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "blink_counter", "frame_b64"],
             "data": [[
                 landmarksFlat,    # 1434 valores [x1,y1,z1,x2,y2,z2,...]
                 gazeDx,           # -1.0 a 1.0
                 gazeDy,           # -1.0 a 1.0  
                 float(ear),       # 0.0 a 1.0
                 float(blinkRate), # 0 a 120 bpm
-                float(confidence) # 0.0 a 1.0
+                blinkCounter,     # número de blinks
+                frameB64          # imagem em base64
             ]]
         }
 

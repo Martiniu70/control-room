@@ -365,8 +365,8 @@ class ZeroMQProcessor(SignalControlInterface):
         FORMATO INPUT ZeroMQ:
         {
             "ts": "timestamp",
-            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
-            "data": [[flattened_landmarks, gaze_dx, gaze_dy, ear, blink_rate, confidence]]
+            "labels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "blink_counter", "frame_b64"],,
+            "data": [[flattened_landmarks, gaze_dx, gaze_dy, ear, blink_rate, blink_counter, frame_b64]]
         }
         
         FORMATO OUTPUT SignalManager:
@@ -379,7 +379,8 @@ class ZeroMQProcessor(SignalControlInterface):
                 "gaze_vector": {"dx": 0.2, "dy": -0.1},
                 "ear": 0.25,
                 "blink_rate": 18,
-                "confidence": 0.85
+                "blink_counter": 34,
+                "frame_b64": "base64_string"
             }
         }
         
@@ -415,7 +416,8 @@ class ZeroMQProcessor(SignalControlInterface):
                 "gaze_vector": {},
                 "ear": None,
                 "blink_rate": None,
-                "confidence": None
+                "blink_counter": None,
+                "frame_b64": None
             }
             
             # Mapear dados baseado nas labels
@@ -448,8 +450,10 @@ class ZeroMQProcessor(SignalControlInterface):
                     processedData["ear"] = float(firstRow[i])
                 elif label == "blink_rate":
                     processedData["blink_rate"] = float(firstRow[i])
-                elif label == "confidence":
-                    processedData["confidence"] = float(firstRow[i])
+                elif label == "blink_counter":
+                    processedData["blink_counter"] = int(firstRow[i])
+                elif label == "frame_b64":
+                    processedData["frame_b64"] = str(firstRow[i])
             
             # Validações básicas de integridade
             if processedData["landmarks"] is None:
@@ -460,7 +464,7 @@ class ZeroMQProcessor(SignalControlInterface):
                 self.logger.warning(f"Missing gaze vector components in Camera_FaceLandmarks")
                 return None
                 
-            if any(val is None for val in [processedData["ear"], processedData["blink_rate"], processedData["confidence"]]):
+            if any(val is None for val in [processedData["ear"], processedData["blink_rate"], processedData["blink_counter"]]):
                 self.logger.warning(f"Missing required fields in Camera_FaceLandmarks")
                 return None
             
@@ -473,10 +477,6 @@ class ZeroMQProcessor(SignalControlInterface):
                 self.logger.warning(f"Blink rate out of range: {processedData['blink_rate']}")
                 return None
                 
-            if not (0.0 <= processedData["confidence"] <= 1.0):
-                self.logger.warning(f"Confidence out of range: {processedData['confidence']}")
-                return None
-            
             # Validar gaze vector range
             dx = processedData["gaze_vector"]["dx"]
             dy = processedData["gaze_vector"]["dy"]
