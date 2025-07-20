@@ -1,4 +1,4 @@
-# Control Room Para Simulador de Condu��o 
+# Control Room Para Simulador de Condução 
 ⚠️ Requisitos:
 
 Node.js (v18 ou superior) → https://nodejs.org
