@@ -220,13 +220,12 @@ class ZeroMQConfig:
             "Camera_FaceLandmarks": {
                 "requiredFields": ["ts", "labels", "data"],
                 "optionalFields": [],
-                "expectedLabels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
+                "expectedLabels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "blink_counter", "frame_b64"],
                 "valueRanges": {
                     "gaze_dx": (-1.0, 1.0),         # Range normalizado para direção do olhar
                     "gaze_dy": (-1.0, 1.0),         # Range normalizado para direção do olhar
                     "ear": (0.05, 0.5),             # Eye Aspect Ratio
                     "blink_rate": (0, 60),          # Blinks por minuto
-                    "confidence": (0.0, 1.0)        # Confiança da deteção
                 }
             },
             "Control": {
@@ -339,7 +338,7 @@ class MockZeroMQConfig:
                 
                 # Landmarks anatomy mapping (índices MediaPipe)
                 "landmarkRanges": {
-                    "faceOutline": [0, 64],         # Contorno facial
+                    "faceOutline": [0, 63],         # Contorno facial
                     "eyebrows": [64, 83],           # Sobrancelhas (esquerda + direita)
                     "leftEyebrow": [64, 73],        # Sobrancelha esquerda
                     "rightEyebrow": [74, 83],       # Sobrancelha direita
@@ -396,7 +395,7 @@ class MockZeroMQConfig:
                         "probability": 0.01,             # 1% do tempo
                         "durationRange": [5.0, 15.0]     # 5-15s
                     },
-                    "checkingMirrors": {
+                    "checking_mirrors": {
                         "gazeCenter": [0.75, -0.1],      # Para os lados
                         "gazeVariation": 0.3,            # Movimento amplo
                         "earBase": 0.3,                  # EAR normal
@@ -404,7 +403,7 @@ class MockZeroMQConfig:
                         "probability": 0.15,             # 15% do tempo
                         "durationRange": [2.0, 8.0]      # 2-8s
                     },
-                    "lookingAside": {
+                    "looking_aside": {
                         "gazeCenter": [0.6, 0.2],        # Lado e baixo
                         "gazeVariation": 0.4,            # Movimento amplo
                         "earBase": 0.28,                 # Ligeiramente reduzido
@@ -412,7 +411,7 @@ class MockZeroMQConfig:
                         "probability": 0.10,             # 10% do tempo
                         "durationRange": [3.0, 12.0]     # 3-12s
                     },
-                    "readingDashboard": {
+                    "reading_dashboard": {
                         "gazeCenter": [0.0, 0.55],       # Para baixo
                         "gazeVariation": 0.25,           # Movimento moderado
                         "earBase": 0.32,                 # EAR normal
@@ -485,7 +484,7 @@ class MockZeroMQConfig:
                     "backgroundColor": "lightblue",     # Cor de fundo
                     "colors": {
                         "faceOutline": "black",
-                        "eyebrows": "darkbrown",
+                        "eyebrows": "brown",
                         "nose": "black",
                         "mouth": "red",
                         "eyeOpen": "white",
@@ -717,7 +716,7 @@ class SignalConfig:
                 "stabilityThreshold": 0.1,      # Mudança máxima entre frames
                 "centerDeadzone": 0.05          # Zona morta central
             },
-            "blinkRate": {
+            "blink_rate": {
                 "samplingRate": "event",        # Eventos imediatos quando detectados
                 "bufferSize": 100,              # Últimos 100 blinks
                 "normalRange": (10, 30),        # Blinks por minuto
@@ -731,14 +730,19 @@ class SignalConfig:
                 "blinkThreshold": 0.12,         # Abaixo disto = olho fechado
                 "drowsyThreshold": 0.18         # Abaixo disto por tempo = sonolência
             },
-            "videoStream": {
-                "fps": 0.5,                     # 0.5Hz - consistente com sistema
+            "blink_counter": {
+                "samplingRate": "event",        # Eventos imediatos 
+                "bufferSize": 100,              # Últimos 100 valores
+                "normalRange": (0, 10000),      # Range esperado de contador
+                "resetThreshold": 86400         # Reset após 24h (segundos)
+            },
+            "frame_b64": {
+                "samplingRate": 0.5,            # 0.5Hz - consistente com landmarks
                 "bufferSize": 15,               # 30s de frames
-                "resolution": (640, 480),       # Resolução padrão
-                "qualityThreshold": 0.7,        # Qualidade mínima para processamento
-                "frameFormat": "jpeg",          # Formato de compressão
-                "frameQuality": 85              # Qualidade JPEG (0-100)
-            }
+                "frameFormat": "base64",        # Formato da imagem
+                "frameQuality": 85,             # Qualidade JPEG (0-100)
+                "maxFrameSize": 50000           # Tamanho máximo em bytes (~50KB)
+            },
         }
                 
         # TODO Configurações Unity
