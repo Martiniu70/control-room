@@ -33,7 +33,7 @@ class CameraSignal(BaseSignal):
         # Configurações específicas de câmera
         self.landmarksConfig = cameraConfig["faceLandmarks"]
         self.gazeConfig = cameraConfig["gaze"] 
-        self.blinkConfig = cameraConfig["blinkRate"]
+        self.blinkConfig = cameraConfig["blink_rate"]
         self.earConfig = cameraConfig["ear"]
         
         # Parâmetros de validação
@@ -61,8 +61,8 @@ class CameraSignal(BaseSignal):
         
         self.logger.info(f"CameraSignal initialized - {self.expectedLandmarksCount} landmarks")
     
-    def getNormalRange(self) -> Optional[tuple]:
-        pass
+    def getNormalRange(self):
+        return super().getNormalRange()
 
     def validateValue(self, value: Any) -> bool:
         """
@@ -86,7 +86,7 @@ class CameraSignal(BaseSignal):
             )
         
         # Verificar campos obrigatórios
-        requiredFields = ["landmarks", "gazeVector", "ear", "blinkRate", "blinkCounter"]
+        requiredFields = ["landmarks", "gaze_vector", "ear", "blink_rate", "blink_counter"]
         for field in requiredFields:
             if field not in value:
                 raise SignalValidationError(
@@ -121,7 +121,7 @@ class CameraSignal(BaseSignal):
             )
         
         # Validar gaze vector
-        gazeVector = value["gazeVector"]
+        gazeVector = value["gaze_vector"]
         if not isinstance(gazeVector, dict) or "dx" not in gazeVector or "dy" not in gazeVector:
             raise SignalValidationError(
                 signalType="camera",
@@ -148,7 +148,7 @@ class CameraSignal(BaseSignal):
             )
         
         # Validar blink rate
-        blinkRate = value["blinkRate"]
+        blinkRate = value["blink_rate"]
         if not isinstance(blinkRate, (int, float)) or not (0 <= blinkRate <= 120):
             raise SignalValidationError(
                 signalType="camera",
@@ -156,7 +156,7 @@ class CameraSignal(BaseSignal):
                 reason="Blink rate must be between 0 and 120 bpm"
             )
         
-        blinkCounter = value["blinkCounter"]
+        blinkCounter = value["blink_counter"]
         if not isinstance(blinkCounter, int) or blinkCounter < 0:
             raise SignalValidationError(
                 signalType="camera",
@@ -182,16 +182,16 @@ class CameraSignal(BaseSignal):
             return anomalies
         
         # Analisar ponto mais recente
-        latest_point = recentPoints[-1]
-        if not isinstance(latest_point.value, dict):
+        latestPoint = recentPoints[-1]
+        if not isinstance(latestPoint.value, dict):
             return anomalies
         
-        data = latest_point.value
+        data = latestPoint.value
         
         # Extrair valores principais
         ear = data.get("ear")
-        blinkRate = data.get("blinkRate")
-        gazeVector = data.get("gazeVector", {})
+        blinkRate = data.get("blink_rate")
+        gazeVector = data.get("gaze_vector", {})
         
         # Anomalia: Taxa de piscadelas baixa (sonolência)
         if blinkRate is not None and blinkRate < self.drowsinessBlinkThreshold:
@@ -236,7 +236,7 @@ class CameraSignal(BaseSignal):
         if len(recentPoints) >= 2 and gazeVector:
             prev_point = recentPoints[-2]
             if isinstance(prev_point.value, dict):
-                prevGaze = prev_point.value.get("gazeVector", {})
+                prevGaze = prev_point.value.get("gaze_vector", {})
                 if prevGaze:
                     dxChange = abs(gazeVector.get("dx", 0) - prevGaze.get("dx", 0))
                     dyChange = abs(gazeVector.get("dy", 0) - prevGaze.get("dy", 0))
@@ -287,7 +287,7 @@ class CameraSignal(BaseSignal):
         numericValues = []
         for point in points:
             if isinstance(point.value, dict):
-                blinkCounter = point.value.get("blinkCounter")
+                blinkCounter = point.value.get("blink_counter")
                 if blinkCounter is not None and isinstance(blinkCounter, (int, float)):
                     numericValues.append(float(blinkCounter))
         
@@ -304,16 +304,16 @@ class CameraSignal(BaseSignal):
         baseStatus = self.getStatus()
         
         # Calcular métricas específicas de câmera
-        recent_points = self.getLatest(5)
-        camera_metrics = self._calculateCameraMetrics(recent_points)
+        recentPoints = self.getLatest(5)
+        cameraMetrics = self._calculateCameraMetrics(recentPoints)
         
         camera_status = {
             **baseStatus,
-            "cameraMetrics": camera_metrics,
+            "cameraMetrics": cameraMetrics,
             "lastValues": {
                 "ear": self.lastEar,
-                "blinkRate": self.lastBlinkRate,
-                "gazeVector": self.lastGazeVector,
+                "blink_rate": self.lastBlinkRate,
+                "gaze_vector": self.lastGazeVector,
                 "consecutiveLowEar": self.consecutiveLowEarCount
             },
             "thresholds": {
@@ -325,7 +325,7 @@ class CameraSignal(BaseSignal):
             },
             "ranges": {
                 "gaze": self.gazeNormalRange,
-                "blinkRate": self.blinkRateNormalRange,
+                "blink_rate": self.blinkRateNormalRange,
                 "ear": self.earNormalRange
             },
             "config": {
@@ -337,18 +337,18 @@ class CameraSignal(BaseSignal):
         
         return camera_status
     
-    def _calculateCameraMetrics(self, recent_points: List[SignalPoint]) -> Dict[str, Any]:
+    def _calculateCameraMetrics(self, recentPoints: List[SignalPoint]) -> Dict[str, Any]:
         """
         Calcula métricas específicas dos dados de câmera.
         
         Args:
-            recent_points: Pontos recentes para análise
+            recentPoints: Pontos recentes para análise
             
         Returns:
             Métricas detalhadas de qualidade e performance
         """
         
-        if not recent_points:
+        if not recentPoints:
             return {"available": False, "reason": "No recent data"}
         
         # Extrair dados dos pontos recentes
@@ -356,25 +356,25 @@ class CameraSignal(BaseSignal):
         blinkRate = []
         gazeMagnitude = []
         
-        for point in recent_points:
+        for point in recentPoints:
             if isinstance(point.value, dict):
                 data = point.value
                 
                 if "ear" in data:
                     ears.append(data["ear"])
                 
-                if "blinkRate" in data:
-                    blinkRate.append(data["blinkRate"])
+                if "blink_rate" in data:
+                    blinkRate.append(data["blink_rate"])
                 
-                if "gazeVector" in data:
-                    gv = data["gazeVector"]
+                if "gaze_vector" in data:
+                    gv = data["gaze_vector"]
                     if isinstance(gv, dict) and "dx" in gv and "dy" in gv:
                         magnitude = np.sqrt(gv["dx"]**2 + gv["dy"]**2)
                         gazeMagnitude.append(magnitude)
         
         metrics = {
             "available": True,
-            "sampleCount": len(recent_points),
+            "sampleCount": len(recentPoints),
             "qualityMetrics": {},
             "behaviorMetrics": {},
             "stabilityMetrics": {}
