@@ -120,8 +120,8 @@ class SignalManager(SignalControlInterface):
         Adiciona dados a um sinal específico com filtering por Signal Control
         
         Args:
-            signalType: "cardiac", "eeg", "sensors"
-            dataType: "ecg", "hr", "eegRaw", "eegBands", "accelerometer", "gyroscope"
+            signalType: "cardiac", "eeg", "sensors", "camera"
+            dataType: "ecg", "hr", "eegRaw", "eegBands", "accelerometer", "gyroscope", "faceLandmarks"
             value: Valor do sinal
             timestamp: Timestamp opcional
         """
@@ -233,7 +233,8 @@ class SignalManager(SignalControlInterface):
                     "gaze_vector": {"dx": 0.2, "dy": -0.1},
                     "ear": 0.25,
                     "blink_rate": 18,
-                    "confidence": 0.85
+                    "blink_counter": 34,
+                    "im
                 }
             }
         }

@@ -708,7 +708,6 @@ class SignalConfig:
                 "landmarksCount": 478,          # Pontos MediaPipe
                 "landmarksDimensions": 3,       # x, y, z
                 "normalizedCoords": True,       # Coordenadas 0-1
-                "detectionThreshold": 0.5,      # Confiança mínima
                 "stabilityThreshold": 0.02      # Movimento máximo entre frames (normalizado)
             },
             "gaze": {
@@ -881,7 +880,7 @@ class SignalConfig:
                 "accBaselineNoise": 5.0,            # Ruído baseline ACC em ADC units
                 "gyrBaselineNoise": 2.0,            # Ruído baseline GYR em ADC units
                 "accGravityOffset": {               # Offset gravitacional por eixo
-                    "x": 0, "y": 0, "z": 8192      # Z = ~1g em ADC (aprox 32768/4)
+                    "x": 0, "y": 0, "z": 8192       # Z = ~1g em ADC (aprox 32768/4)
                 },
                 "gyrZeroOffset": {                  # Offset zero por eixo
                     "x": 0, "y": 0, "z": 0
@@ -966,13 +965,13 @@ class SignalControlConfig:
 
         self.componentSignalMappings = {
             # Componentes que trabalham com tópicos ZeroMQ
-            "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
-            "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"]
-            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG"] 
+            "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"]
+            "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"]
+            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"] 
             
             # Componentes que trabalham com signal types
-            "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
-            "websocket": self.signalTypes.copy()     # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw"]
+            "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
+            "websocket": self.signalTypes.copy()     # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
         }
         
         self.defaultActiveStates = {

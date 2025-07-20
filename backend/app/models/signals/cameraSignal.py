@@ -39,7 +39,6 @@ class CameraSignal(BaseSignal):
         # Parâmetros de validação
         self.expectedLandmarksCount = self.landmarksConfig["landmarksCount"]      # 478
         self.landmarksDimensions = self.landmarksConfig["landmarksDimensions"]    # 3 (x,y,z)
-        self.detectionThreshold = self.landmarksConfig["detectionThreshold"]     # 0.5
         
         # Ranges e thresholds de validação
         self.gazeNormalRange = self.gazeConfig["normalRange"]                    # (-1.0, 1.0)
@@ -84,7 +83,7 @@ class CameraSignal(BaseSignal):
             )
         
         # Verificar campos obrigatórios
-        requiredFields = ["landmarks", "gazeVector", "ear", "blinkRate", "confidence"]
+        requiredFields = ["landmarks", "gazeVector", "ear", "blinkRate", "blinkCounter"]
         for field in requiredFields:
             if field not in value:
                 raise SignalValidationError(
@@ -154,25 +153,15 @@ class CameraSignal(BaseSignal):
                 reason="Blink rate must be between 0 and 120 bpm"
             )
         
-        # Validar confidence
-        confidence = value["confidence"]
-        if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+        blinkCounter = value["blinkCounter"]
+        if not isinstance(blinkCounter, int) or blinkCounter < 0:
             raise SignalValidationError(
                 signalType="camera",
-                value=confidence,
-                reason="Confidence must be between 0.0 and 1.0"
+                value=blinkCounter,
+                reason="Blink counter must be a non-negative integer"
             )
-        
+                
         return True
-    
-    def getNormalRange(self) -> Optional[tuple]:
-        """
-        Retorna range normal para confiança de deteção.
-        
-        Returns:
-            Range (min, max) para confidence ou None se não aplicável
-        """
-        return (self.detectionThreshold, 1.0)
     
     def detectAnomalies(self, recentPoints: List[SignalPoint]) -> List[str]:
         """
@@ -199,7 +188,6 @@ class CameraSignal(BaseSignal):
         # Extrair valores principais
         ear = data.get("ear")
         blinkRate = data.get("blinkRate")
-        confidence = data.get("confidence")
         gazeVector = data.get("gazeVector", {})
         
         # Anomalia: Taxa de piscadelas baixa (sonolência)
@@ -221,11 +209,6 @@ class CameraSignal(BaseSignal):
                 anomalies.append(f"EAR baixo prolongado: {ear:.3f} (sonolência {severity})")
         else:
             self.consecutiveLowEarCount = 0
-        
-        # Anomalia: Confiança de deteção baixa (qualidade má)
-        if confidence is not None and confidence < self.detectionThreshold:
-            severity = "alta" if confidence < 0.3 else "moderada"
-            anomalies.append(f"Confiança de deteção baixa: {confidence:.2f} (qualidade {severity})")
         
         # Anomalia: Olhar muito desviado (distração)
         if gazeVector:
@@ -289,21 +272,21 @@ class CameraSignal(BaseSignal):
     def _extractNumericValues(self, points: List[SignalPoint]) -> List[float]:
         """
         Extrai valores numéricos dos pontos para cálculo de métricas.
-        Usa confidence como valor numérico principal.
+        Usa blinkcounter como valor numérico principal.
         
         Args:
             points: Lista de pontos do signal
             
         Returns:
-            Lista de valores de confidence
+            Lista de valores de blinkCounter
         """
         
         numericValues = []
         for point in points:
             if isinstance(point.value, dict):
-                confidence = point.value.get("confidence")
-                if confidence is not None and isinstance(confidence, (int, float)):
-                    numericValues.append(float(confidence))
+                blinkCounter = point.value.get("blinkCounter")
+                if blinkCounter is not None and isinstance(blinkCounter, (int, float)):
+                    numericValues.append(float(blinkCounter))
         
         return numericValues
     
@@ -331,7 +314,6 @@ class CameraSignal(BaseSignal):
                 "consecutiveLowEar": self.consecutiveLowEarCount
             },
             "thresholds": {
-                "detectionConfidence": self.detectionThreshold,
                 "drowsinessBlinkRate": self.drowsinessBlinkThreshold,
                 "hyperBlinkRate": self.hyperBlinkThreshold,
                 "earBlink": self.earBlinkThreshold,
@@ -367,7 +349,6 @@ class CameraSignal(BaseSignal):
             return {"available": False, "reason": "No recent data"}
         
         # Extrair dados dos pontos recentes
-        confidences = []
         ears = []
         blinkRate = []
         gazeMagnitude = []
@@ -375,9 +356,6 @@ class CameraSignal(BaseSignal):
         for point in recent_points:
             if isinstance(point.value, dict):
                 data = point.value
-                
-                if "confidence" in data:
-                    confidences.append(data["confidence"])
                 
                 if "ear" in data:
                     ears.append(data["ear"])
@@ -399,16 +377,6 @@ class CameraSignal(BaseSignal):
             "stabilityMetrics": {}
         }
         
-        # Métricas de qualidade
-        if confidences:
-            metrics["qualityMetrics"] = {
-                "averageConfidence": round(np.mean(confidences), 3),
-                "minConfidence": round(np.min(confidences), 3),
-                "maxConfidence": round(np.max(confidences), 3),
-                "confidenceStability": round(1.0 - np.std(confidences), 3),
-                "highQualityFrames": sum(1 for c in confidences if c >= 0.8),
-                "lowQualityFrames": sum(1 for c in confidences if c < self.detectionThreshold)
-            }
         
         # Métricas comportamentais
         if ears and blinkRate:
