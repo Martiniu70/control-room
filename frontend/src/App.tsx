@@ -6,6 +6,8 @@ import Header from "./components/Header";
 import SignalModal from "./components/SignalModal";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSignalControl } from "./hooks/useSignalControl";
+
+// Importar a nova configuração de cards
 import { CardConfig, getCardConfigBySignalName } from "./config/cardConfig";
 
 import { Layout } from "react-grid-layout";
@@ -38,20 +40,14 @@ interface EegRawProcessedData {
   [channel: string]: DataPoint[];
 }
 
-// NOVO: Interface para os dados processados de Face Landmarks
+// ATUALIZADO: Interface para os dados processados de Face Landmarks com a nova estrutura
 interface FaceLandmarksProcessedData {
   landmarks: number[][];
   gaze_vector: { dx: number; dy: number };
   ear: number;
   blink_rate: number;
-  blink_counter: number; // <-- Esta propriedade é obrigatória
-  confidence: number;
-  frame_b64: string;
-  attentionPattern: string;
-  isBlinking: boolean;
-  frameNumber: number;
-  frameTimestamp: number;
-  anomalyType: string;
+  blink_counter: number;
+  frame_b64: string; // 'confidence' removido
   timestamp: number; // Timestamp do SignalPoint
 }
 
@@ -64,8 +60,8 @@ interface CardType {
   rowSpan: number;
   signalType: CardConfig['signalType']; // Usa o tipo de signalType da CardConfig
   componentType: CardConfig['componentType']; // NOVO: Adiciona o tipo de componente para renderização dinâmica
-  signalName: string; // O nome do sinal específico (e.g., 'hr_data', 'ecg_signal')
-  component: string; // O componente backend associado (e.g., 'websocket')
+  signalName: string;
+  component: string;
   unit?: string; // Opcional, pode vir da config
   color?: string; // Opcional, pode vir da config
 }
@@ -250,26 +246,26 @@ function App() {
     }
   }, [latestEegData?.raw, EEG_SAMPLE_RATE, EEG_WINDOW_DURATION_SECONDS]);
 
-  // NOVO EFEITO: Processar dados de Face Landmarks
+  // ATUALIZADO: Efeito para processar dados de Face Landmarks com a nova estrutura
   useEffect(() => {
     if (latestCameraData?.faceLandmarks?.value) {
       const landmarksValue = latestCameraData.faceLandmarks.value;
-      // Adicionado console.log para inspecionar o objeto landmarksValue
-      console.log("App.tsx - landmarksValue recebido:", landmarksValue);
+      // console.log("App.tsx - landmarksValue recebido:", landmarksValue); // Manter para depuração se necessário
 
       setFaceLandmarksData({
         landmarks: landmarksValue.landmarks,
         gaze_vector: landmarksValue.gaze_vector,
         ear: landmarksValue.ear,
         blink_rate: landmarksValue.blink_rate,
-        blink_counter: landmarksValue.blink_counter, // <-- Adicionado blink_counter
-        confidence: landmarksValue.confidence,
+        blink_counter: landmarksValue.blink_counter,
+        // 'confidence' removido
         frame_b64: landmarksValue.frame_b64,
-        attentionPattern: landmarksValue.attentionPattern,
-        isBlinking: landmarksValue.isBlinking,
-        frameNumber: landmarksValue.frameNumber,
-        frameTimestamp: landmarksValue.frameTimestamp,
-        anomalyType: landmarksValue.anomalyType,
+        // As propriedades abaixo foram removidas da estrutura de dados do backend:
+        // attentionPattern: landmarksValue.attentionPattern,
+        // isBlinking: landmarksValue.isBlinking,
+        // frameNumber: landmarksValue.frameNumber,
+        // frameTimestamp: landmarksValue.frameTimestamp,
+        // anomalyType: landmarksValue.anomalyType,
         timestamp: latestCameraData.faceLandmarks.timestamp,
       });
     }
@@ -452,7 +448,8 @@ function App() {
             <span>Conectado: {connectionStatus.connected ? 'Sim' : 'Não'}</span>
             <span>Anomalias: {recentAnomalies.length}</span>
             <span>Sinais a Carregar: {signalsLoading ? 'Sim' : 'Não'}</span>
-            <span>Frame FaceLandmarks: {faceLandmarksData?.frameNumber ?? 'N/A'}</span> {/* NOVO LOG */}
+            {/* ATUALIZADO: Removido frameNumber do log de desenvolvimento */}
+            <span>FaceLandmarks: {faceLandmarksData ? 'Recebido' : 'N/A'}</span>
           </div>
         </div>
       )}

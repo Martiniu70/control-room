@@ -220,7 +220,7 @@ class ZeroMQConfig:
             "Camera_FaceLandmarks": {
                 "requiredFields": ["ts", "labels", "data"],
                 "optionalFields": [],
-                "expectedLabels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "confidence"],
+                "expectedLabels": ["landmarks", "gaze_dx", "gaze_dy", "ear", "blink_rate", "blink_counter", "frame_b64"],
                 "valueRanges": {
                     "gaze_dx": (-1.0, 1.0),         # Range normalizado para direção do olhar
                     "gaze_dy": (-1.0, 1.0),         # Range normalizado para direção do olhar
@@ -396,7 +396,7 @@ class MockZeroMQConfig:
                         "probability": 0.01,             # 1% do tempo
                         "durationRange": [5.0, 15.0]     # 5-15s
                     },
-                    "checkingMirrors": {
+                    "checking_mirrors": {
                         "gazeCenter": [0.75, -0.1],      # Para os lados
                         "gazeVariation": 0.3,            # Movimento amplo
                         "earBase": 0.3,                  # EAR normal
@@ -404,7 +404,7 @@ class MockZeroMQConfig:
                         "probability": 0.15,             # 15% do tempo
                         "durationRange": [2.0, 8.0]      # 2-8s
                     },
-                    "lookingAside": {
+                    "looking_aside": {
                         "gazeCenter": [0.6, 0.2],        # Lado e baixo
                         "gazeVariation": 0.4,            # Movimento amplo
                         "earBase": 0.28,                 # Ligeiramente reduzido
@@ -412,7 +412,7 @@ class MockZeroMQConfig:
                         "probability": 0.10,             # 10% do tempo
                         "durationRange": [3.0, 12.0]     # 3-12s
                     },
-                    "readingDashboard": {
+                    "reading_dashboard": {
                         "gazeCenter": [0.0, 0.55],       # Para baixo
                         "gazeVariation": 0.25,           # Movimento moderado
                         "earBase": 0.32,                 # EAR normal

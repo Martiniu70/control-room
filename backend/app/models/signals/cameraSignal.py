@@ -59,8 +59,11 @@ class CameraSignal(BaseSignal):
         self.recentEarValues: List[float] = []
         self.consecutiveLowEarCount = 0
         
-        self.logger.info(f"CameraSignal initialized - {self.expectedLandmarksCount} landmarks, threshold: {self.detectionThreshold}")
+        self.logger.info(f"CameraSignal initialized - {self.expectedLandmarksCount} landmarks")
     
+    def getNormalRange(self) -> Optional[tuple]:
+        pass
+
     def validateValue(self, value: Any) -> bool:
         """
         Valida estrutura completa dos dados de câmera.

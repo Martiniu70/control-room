@@ -51,21 +51,15 @@ interface EegRawProcessedData {
   [channel: string]: { x: number; value: number }[];
 }
 
-// NOVO: Interface para os dados de Face Landmarks
+// ATUALIZADO: Interface para os dados de Face Landmarks com a nova estrutura
 interface FaceLandmarksProcessedData {
   landmarks: number[][];
   gaze_vector: { dx: number; dy: number };
   ear: number;
   blink_rate: number;
   blink_counter: number;
-  confidence: number;
-  frame_b64: string;
-  attentionPattern: string;
-  isBlinking: boolean;
-  frameNumber: number;
-  frameTimestamp: number;
-  anomalyType: string;
-  timestamp: number;
+  frame_b64: string; // 'confidence' removido
+  timestamp: number; // Timestamp do SignalPoint
 }
 
 

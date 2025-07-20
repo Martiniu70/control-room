@@ -66,7 +66,6 @@ class CameraFaceLandmarksGenerator:
         self.fps = self.landmarksConfig["fps"]                                    # 0.5Hz
         self.frameDuration = 1.0 / self.fps                                      # 2s por frame
         self.landmarksCount = self.landmarksConfig["landmarksCount"]             # 478
-        self.detectionThreshold = self.landmarksConfig["detectionThreshold"]     # 0.5
         
         # Configurações de anomalias
         self.anomalyConfig = self.mockConfig.anomalyInjection
@@ -937,7 +936,6 @@ class CameraFaceLandmarksGenerator:
                 "imageSize": self.imageSize
             },
             "config": {
-                "detectionThreshold": self.detectionThreshold,
                 "anomalyChance": self.anomalyChance,
                 "blinkRange": self.blinkConfig["normalRange"],
                 "earRange": self.earConfig["normalRange"]
