@@ -35,86 +35,74 @@ const FaceLandmarksCardContent: React.FC<FaceLandmarksContentProps> = ({
     // 'attentionPattern', 'isBlinking', 'anomalyType' removidos da desestruturação
   } = data;
 
-  // A imagem é 200x200, então o SVG também deve ter essas dimensões para o mapeamento 0-1
-  const imageDisplaySize = 200;
+   // Definir margens para o SVG para dar espaço aos textos
+  const svgMarginTop = 10;
+  const svgMarginBottom = 100; // Espaço para as métricas abaixo
+  const svgMarginLeft = 10;
+  const svgMarginRight = 10;
 
-  // Escalas para mapear os landmarks normalizados (0-1) para as dimensões da imagem (0-200)
-  const xScale = (val: number) => val * imageDisplaySize;
-  const yScale = (val: number) => val * imageDisplaySize;
+  const svgWidth = cardWidth - svgMarginLeft - svgMarginRight;
+  const svgHeight = cardHeight - svgMarginTop - svgMarginBottom;
 
-  // Calcula a altura aproximada para as métricas de texto na parte inferior
-  const textMetricsHeight = 80; // Ajuste conforme necessário
-  // Calcula o espaço visual disponível para a imagem/SVG
-  const availableVisualHeight = cardHeight - textMetricsHeight - 20; // 20px de padding/margem extra
+  // Escalas para mapear os landmarks normalizados (0-1) para as dimensões do SVG
+  // Invertemos o eixo Y para que o 0 esteja no topo (como em coordenadas de tela)
+  const xScale = (val: number) => val * svgWidth;
+  const yScale = (val: number) => val * svgHeight;
 
-  // Calcula a margem superior para centralizar verticalmente a imagem/SVG
-  const visualAreaTopOffset = Math.max(0, (availableVisualHeight - imageDisplaySize) / 2);
-
-
-  return (
+  return(
     <div className="flex flex-col items-center justify-between w-full h-full p-2">
-      <div
-        className="relative flex-shrink-0" // flex-shrink-0 para evitar que encolha
-        style={{ width: imageDisplaySize, height: imageDisplaySize, marginTop: visualAreaTopOffset }}
-      >
-        {frame_b64 && (
-          <img
-            src={`data:image/jpeg;base64,${frame_b64}`}
-            alt="Face"
-            className="absolute top-0 left-0 w-full h-full object-contain rounded-md shadow-inner"
-            onError={(e) => {
-              e.currentTarget.src = "https://placehold.co/200x200/cccccc/000000?text=Image+Error";
-              console.error("Failed to load face landmarks image.");
-            }}
-          />
-        )}
-        {landmarks && landmarks.length > 0 && (
+      <div className="relative flex-1 w-full flex items-center justify-center bg-gray-50 rounded-md overflow-hidden">
+        {landmarks && landmarks.length > 0 ? (
           <svg
-            width={imageDisplaySize}
-            height={imageDisplaySize}
-            viewBox={`0 0 ${imageDisplaySize} ${imageDisplaySize}`} // Viewbox corresponde ao tamanho da imagem
-            className="absolute top-0 left-0 w-full h-full" // Sobrepõe o SVG perfeitamente
+            width={svgWidth}
+            height={svgHeight}
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="border border-gray-300 rounded-md"
           >
             {/* Desenha cada landmark como um pequeno círculo */}
             {landmarks.map((point, index) => {
+              // Ignoramos a coordenada Z para a visualização 2D
               const [x, y] = point;
-              return (
-                <circle
-                  key={index}
-                  cx={xScale(x)}
-                  cy={yScale(y)}
-                  r={1.5} // Raio pequeno para os pontos
-                  fill="#e74c3c" // Cor vermelha para os pontos
-                  opacity={0.7}
-                  style={{ transition: 'cx 0.1s linear, cy 0.1s linear' }}
-                />
-              );
+              if(index < 163){
+                return (
+                  <circle
+                    key={index}
+                    cx={xScale(x)}
+                    cy={yScale(y)}
+                    r={1.5} // Raio pequeno para os pontos
+                    fill="#e74c3c" // Cor vermelha para os pontos
+                    opacity={0.7}
+                    // Adicionado transition para animar o movimento dos pontos
+                    style={{ transition: 'cx 0.1s linear, cy 0.1s linear' }}
+                  />
+                );
+              }
+              else{
+                return;
+              }
+              
             })}
             {/* Opcional: Desenhar um círculo no centro da face (aproximado) */}
             {landmarks.length > 0 && (
               <circle
-                cx={xScale(landmarks[0][0])}
-                cy={yScale(landmarks[0][1])}
+                cx={xScale(landmarks[90][0])} // Usando o primeiro landmark como referência de centro
+                cy={yScale(landmarks[90][1])}
                 r={3}
                 fill="#3498db" // Azul para o centro
                 opacity={0.9}
+                // Adicionado transition para animar o movimento do ponto central
                 style={{ transition: 'cx 0.1s linear, cy 0.1s linear' }}
               />
             )}
           </svg>
+        ) : (
+          <p className="text-gray-500">A aguardar pontos de landmarks...</p>
         )}
       </div>
 
-      {/* ATUALIZADO: Removidas as propriedades que já não existem */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-700 mt-2 w-full max-w-xs">
         <span className="font-semibold">EAR:</span> <span>{ear.toFixed(2)}</span>
         <span className="font-semibold">Blink Rate:</span> <span>{blink_rate.toFixed(1)} bpm</span>
-        {/* 'Confidence' removido */}
-        {/* <span className="font-semibold">Confiança:</span> <span>{(confidence * 100).toFixed(1)}%</span> */}
-        {/* As propriedades abaixo foram removidas: */}
-        {/* <span className="font-semibold">Atenção:</span> <span>{attentionPattern.replace(/_/g, ' ')}</span> */}
-        {/* <span className="font-semibold">A piscar:</span> <span>{isBlinking ? 'Sim' : 'Não'}</span> */}
-        {/* <span className="font-semibold">Anomalia:</span> <span className={`${anomalyType !== 'normal' ? 'text-red-500 font-bold' : ''}`}>{anomalyType.replace(/_/g, ' ')}</span> */}
       </div>
     </div>
   );

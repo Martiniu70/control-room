@@ -1,12 +1,12 @@
 {
   "metadata": {
     "version": "1.0.0",
-    "timestamp": "2025-07-20T01:43:33.194826",
+    "timestamp": "2025-07-20T07:47:39.724426",
     "saveOperation": 2
   },
   "signalControl": {
     "globalState": {
-      "timestamp": "2025-07-20T01:43:33.181612",
+      "timestamp": "2025-07-20T07:47:39.711550",
       "components": {
         "manager": {
           "state": "running",
@@ -32,19 +32,19 @@
               "faceLandmarks"
             ],
             "activeSignalsList": [
-              "accelerometer",
+              "gyroscope",
               "eegRaw",
-              "faceLandmarks",
-              "ecg",
               "hr",
-              "gyroscope"
+              "faceLandmarks",
+              "accelerometer",
+              "ecg"
             ],
             "inactiveSignalsList": [],
             "filtering": {
               "totalFiltered": 0,
               "filteringRate": 0.0
             },
-            "lastUpdate": "2025-07-20T01:43:33.181612"
+            "lastUpdate": "2025-07-20T07:47:39.711550"
           }
         },
         "processor": {
@@ -77,22 +77,22 @@
               "Cfg"
             ],
             "activeSignalsList": [
-              "Timestamp",
-              "CardioWheel_ACC",
               "Control",
-              "Cfg",
-              "CardioWheel_ECG",
+              "CardioWheel_ACC",
               "Camera_FaceLandmarks",
+              "Cfg",
+              "Polar_PPI",
               "BrainAcess_EEG",
               "CardioWheel_GYR",
-              "Polar_PPI"
+              "Timestamp",
+              "CardioWheel_ECG"
             ],
             "inactiveSignalsList": [],
             "filtering": {
               "totalFiltered": 0,
               "filteringRate": 0.0
             },
-            "lastUpdate": "2025-07-20T01:43:33.181612"
+            "lastUpdate": "2025-07-20T07:47:39.711550"
           }
         },
         "listener": {
@@ -125,18 +125,18 @@
               "Cfg"
             ],
             "activeSignalsList": [
-              "Timestamp",
-              "CardioWheel_ACC",
               "Control",
-              "Cfg",
-              "CardioWheel_ECG",
+              "CardioWheel_ACC",
               "Camera_FaceLandmarks",
+              "Cfg",
+              "Polar_PPI",
               "BrainAcess_EEG",
               "CardioWheel_GYR",
-              "Polar_PPI"
+              "Timestamp",
+              "CardioWheel_ECG"
             ],
             "inactiveSignalsList": [],
-            "lastUpdate": "2025-07-20T01:43:33.181612"
+            "lastUpdate": "2025-07-20T07:47:39.711550"
           }
         },
         "websocket": {
@@ -145,9 +145,9 @@
             "hr": "active",
             "ecg": "inactive",
             "accelerometer": "inactive",
-            "gyroscope": "inactive",
+            "gyroscope": "active",
             "eegRaw": "inactive",
-            "faceLandmarks": "active"
+            "faceLandmarks": "inactive"
           },
           "summary": {
             "componentState": "running",
@@ -163,26 +163,26 @@
               "faceLandmarks"
             ],
             "activeSignalsList": [
-              "hr",
-              "faceLandmarks"
+              "gyroscope",
+              "hr"
             ],
             "inactiveSignalsList": [
               "ecg",
               "accelerometer",
-              "gyroscope",
-              "eegRaw"
+              "eegRaw",
+              "faceLandmarks"
             ],
             "filtering": {
-              "messagesFiltered": 650175,
-              "anomaliesFiltered": 31515,
-              "filteringRate": 0.9957454824466692
+              "messagesFiltered": 3700,
+              "anomaliesFiltered": 226,
+              "filteringRate": 0.9850905218317358
             },
             "connections": {
               "activeConnections": 1,
               "maxConnections": 10,
-              "connectionEvents": 53
+              "connectionEvents": 1
             },
-            "lastUpdate": "2025-07-20T01:43:33.181612"
+            "lastUpdate": "2025-07-20T07:47:39.711550"
           }
         },
         "publisher": {
@@ -209,15 +209,15 @@
               "Camera_FaceLandmarks"
             ],
             "activeSignalsList": [
-              "CardioWheel_ACC",
-              "BrainAcess_EEG",
               "CardioWheel_GYR",
+              "CardioWheel_ACC",
+              "Camera_FaceLandmarks",
               "Polar_PPI",
-              "CardioWheel_ECG",
-              "Camera_FaceLandmarks"
+              "BrainAcess_EEG",
+              "CardioWheel_ECG"
             ],
             "inactiveSignalsList": [],
-            "lastUpdate": "2025-07-20T01:43:33.181612"
+            "lastUpdate": "2025-07-20T07:47:39.711550"
           }
         }
       },
@@ -240,14 +240,14 @@
           "type": "enable_signal",
           "signal": "hr",
           "component": "websocket",
-          "timestamp": "2025-07-20T01:43:33.181612",
+          "timestamp": "2025-07-20T07:47:39.711550",
           "results": {
             "websocket": true
           }
         },
         "totalComponents": 5,
         "errors": 0,
-        "startTime": "2025-07-19T23:54:42.923881"
+        "startTime": "2025-07-20T07:47:03.905109"
       }
     },
     "config": {
