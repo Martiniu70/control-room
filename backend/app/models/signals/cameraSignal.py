@@ -63,7 +63,7 @@ class CameraSignal(BaseSignal):
     
     def getNormalRange(self):
         return super().getNormalRange()
-    
+
     def validateValue(self, value: Any) -> bool:
         """
         Valida estrutura completa dos dados de câmera.

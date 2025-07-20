@@ -157,6 +157,7 @@ class WebSocketManager(SignalControlInterface):
                 "type": "connection.established",
                 "clientId": clientId,
                 "serverTime": datetime.now().isoformat(),
+              
                 "availableSignals": self.availableSignals,
                 "activeSignals": self.getActiveSignals(),
                 "updateInterval": self.updateInterval
@@ -494,7 +495,7 @@ class WebSocketManager(SignalControlInterface):
                 for data in self.connectionData.values()
             ]
         }
-    
+   
     def getControlSummary(self) -> Dict[str, Any]:
         """
         Retorna resumo do estado de controlo do componente.

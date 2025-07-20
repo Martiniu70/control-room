@@ -234,7 +234,7 @@ class SignalManager(SignalControlInterface):
                     "ear": 0.25,
                     "blink_rate": 18,
                     "blink_counter": 34,
-                    "im
+                    "frame_b64": ,
                 }
             }
         }
