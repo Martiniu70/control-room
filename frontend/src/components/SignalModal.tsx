@@ -8,12 +8,12 @@ interface SignalModalProps {
   onSelect: (component: string, signalName: string) => void;
 }
 
-const SignalModal: React.FC<SignalModalProps> = ({ 
-  open, 
+const SignalModal: React.FC<SignalModalProps> = ({
+  open,
   availableSignals,
   loading = false,
-  onClose, 
-  onSelect 
+  onClose,
+  onSelect
 }) => {
   if (!open) return null;
 
@@ -23,17 +23,17 @@ const SignalModal: React.FC<SignalModalProps> = ({
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-[rgba(0,0,0,0.5)] flex justify-center items-center z-50"
       onClick={onClose}
     >
-      <div 
+      <div
         className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto shadow-lg"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Add Signal to Dashboard</h2>
-          <button 
+          <h2 className="text-xl font-semibold">Adicionar Sinal ao Dashboard</h2>
+          <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 text-2xl"
           >
@@ -43,11 +43,11 @@ const SignalModal: React.FC<SignalModalProps> = ({
 
         {loading ? (
           <div className="text-center py-4">
-            <p>Loading available signals...</p>
+            <p>A carregar sinais disponíveis...</p>
           </div>
         ) : Object.keys(availableSignals).length === 0 ? (
           <div className="text-center py-4">
-            <p>No signals available</p>
+            <p>Nenhum sinal disponível</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -59,10 +59,10 @@ const SignalModal: React.FC<SignalModalProps> = ({
                     return (
                       <li key={`${component}-${signal}`}>
                         <button
-                          className="w-full text-left px-4 py-2 rounded flex items-center"
+                          className="w-full text-left px-4 py-2 rounded flex items-center hover:bg-gray-100 transition-colors"
                           onClick={() => onSelect(component, signal)}
                         >
-                          <span>{capitalize(signal)}</span>
+                          <span>{capitalize(signal.replace(/_/g, ' '))}</span> {/* Melhora a exibição do nome do sinal */}
                         </button>
                       </li>
                     );
@@ -74,11 +74,11 @@ const SignalModal: React.FC<SignalModalProps> = ({
         )}
 
         <div className="mt-4 flex justify-end">
-          <button 
+          <button
             className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
             onClick={onClose}
           >
-            Cancel
+            Cancelar
           </button>
         </div>
       </div>

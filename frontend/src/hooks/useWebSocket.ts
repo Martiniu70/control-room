@@ -1,3 +1,5 @@
+// src/hooks/useWebSocket.ts
+
 import { useState, useEffect, useRef } from 'react';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -18,8 +20,8 @@ interface SignalPoint {
 interface BackendSignalUpdate {
   type: 'signal.update';      // Identificador do tipo de mensagem
   signalType: 'cardiac' | 'eeg' | 'camera' | 'unity' | "sensors"; // Que sensor
-  // ATUALIZADO: Adicionado 'gyroscope' ao dataType
-  dataType: 'ecg' | 'hr' | 'eegRaw' | 'eegBands' | 'landmarks' | 'blinks' | 'steering' | 'speed' | "accelerometer" | "gyroscope"; 
+  // ATUALIZADO: Adicionado 'faceLandmarks' e 'blinks' ao dataType
+  dataType: 'ecg' | 'hr' | 'eegRaw' | 'eegBands' | 'faceLandmarks' | 'blinks' | 'steering' | 'speed' | "accelerometer" | "gyroscope"; // CORRIGIDO
   timestamp: number;          // Quando foi processado
   value: any;                // O valor dos dados
   anomalies?: string[];      // Lista de anomalias detectadas (opcional)
@@ -48,9 +50,9 @@ interface BackendSystemHeartbeat {
 }
 
 // União de todos os tipos de mensagens possíveis do backend
-type BackendMessage = 
-  | BackendSignalUpdate 
-  | BackendAnomalyAlert 
+type BackendMessage =
+  | BackendSignalUpdate
+  | BackendAnomalyAlert
   | BackendSystemHeartbeat
   | {
   type: 'zmq.connected' | 'zmq.error' | 'zmq.warning' | 'zmq.heartbeat' | 'connection.established';
@@ -70,18 +72,24 @@ interface LatestSensorData{
   gyroscope?: SignalPoint;
 }
 
+// ATUALIZADO: Inclui 'faceLandmarks' e 'blinks' na LatestCameraData
+interface LatestCameraData {
+  faceLandmarks?: SignalPoint; // CORRIGIDO: Propriedade para faceLandmarks
+  blinks?: SignalPoint;
+}
+
 // O que o hook retorna para os componentes que o usam
 interface UseWebSocketReturn {
   // Dados mais recentes de cada tipo de sinal
   latestCardiacData: { ecg?: SignalPoint; hr?: SignalPoint } | null;
   latestEegData: { raw?: SignalPoint; bands?: SignalPoint } | null;
-  latestCameraData: { landmarks?: SignalPoint; blinks?: SignalPoint } | null;
+  latestCameraData: LatestCameraData | null; // ATUALIZADO
   latestUnityData: { steering?: SignalPoint; speed?: SignalPoint } | null;
   latestSensorData: LatestSensorData | null;
 
   // Estado da conexão
   connectionStatus: ConnectionStatus;
-  
+
   // Lista das últimas anomalias detectadas
   recentAnomalies: string[];
 
@@ -96,19 +104,18 @@ interface UseWebSocketReturn {
 */
 
 export const useWebSocket = (
-  url: string = 'ws://localhost:8000/api/ws' 
+  url: string = 'ws://localhost:8000/api/ws'
 ): UseWebSocketReturn => {
 
   /* ─────────────────────────────────────────────────────────────────────────────
                                    ESTADO LOCAL
   ─────────────────────────────────────────────────────────────────────────────
   */
-  
+
   const [latestCardiacData, setLatestCardiacData] = useState<{ ecg?: SignalPoint; hr?: SignalPoint } | null>(null);
   const [latestEegData, setLatestEegData] = useState<{ raw?: SignalPoint; bands?: SignalPoint } | null>(null);
-  const [latestCameraData, setLatestCameraData] = useState<{ landmarks?: SignalPoint; blinks?: SignalPoint } | null>(null);
+  const [latestCameraData, setLatestCameraData] = useState<LatestCameraData | null>(null); // ATUALIZADO
   const [latestUnityData, setLatestUnityData] = useState<{ steering?: SignalPoint; speed?: SignalPoint } | null>(null);
-  // ATUALIZADO: Inicializa latestSensorData para incluir giroscópio
   const [latestSensorData, setLatestSensorData] = useState<LatestSensorData | null>(null);
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
@@ -116,24 +123,24 @@ export const useWebSocket = (
     reconnecting: false,
     error: null
   });
-  
+
   const [recentAnomalies, setRecentAnomalies] = useState<string[]>([]);
-  
+
   /* ─────────────────────────────────────────────────────────────────────────────
                                      REFS
   ─────────────────────────────────────────────────────────────────────────────
   */
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttempts = useRef<number>(0);
-  
-  const maxReconnectAttempts = 5;  
-  const reconnectDelay = 3000;     
+
+  const maxReconnectAttempts = 5;
+  const reconnectDelay = 3000;
 
   /* ─────────────────────────────────────────────────────────────────────────────
                               FUNÇÕES DE CONEXÃO
-  ─────────────────────────────────────────────────────────────────────────────
+  ─────────────────────────────────────────────────────────────────────────────────
   */
 
   const connect = () => {
@@ -144,9 +151,9 @@ export const useWebSocket = (
 
     try {
       console.log(`Connecting to WebSocket: ${url}`);
-      
+
       wsRef.current = new WebSocket(url);
-      
+
       setConnectionStatus(prev => ({ ...prev, reconnecting: true, error: null }));
 
       /* ┌─────────────────────────────────────────────────────────────────────────
@@ -167,7 +174,7 @@ export const useWebSocket = (
       wsRef.current.onmessage = (event) => {
         try {
           const message: BackendMessage = JSON.parse(event.data);
-          handleMessage(message); 
+          handleMessage(message);
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
@@ -175,17 +182,17 @@ export const useWebSocket = (
 
       wsRef.current.onclose = (event) => {
         console.log('WebSocket disconnected:', event.code, event.reason);
-        setConnectionStatus(prev => ({ 
-          ...prev, 
+        setConnectionStatus(prev => ({
+          ...prev,
           connected: false,
           error: event.reason || 'Connection closed'
         }));
-        
+
         if (reconnectAttempts.current < maxReconnectAttempts) {
-          scheduleReconnect(); 
+          scheduleReconnect();
         } else {
-          setConnectionStatus(prev => ({ 
-            ...prev, 
+          setConnectionStatus(prev => ({
+            ...prev,
             reconnecting: false,
             error: 'Max reconnection attempts reached'
           }));
@@ -194,16 +201,16 @@ export const useWebSocket = (
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
-        setConnectionStatus(prev => ({ 
-          ...prev, 
+        setConnectionStatus(prev => ({
+          ...prev,
           error: 'Connection error'
         }));
       };
 
     } catch (error) {
       console.error('Error creating WebSocket:', error);
-      setConnectionStatus(prev => ({ 
-        ...prev, 
+      setConnectionStatus(prev => ({
+        ...prev,
         error: 'Failed to create connection'
       }));
     }
@@ -214,12 +221,12 @@ export const useWebSocket = (
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-    
+
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
-    
+
     setConnectionStatus({
       connected: false,
       reconnecting: false,
@@ -231,15 +238,15 @@ export const useWebSocket = (
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
-    
+
     reconnectAttempts.current += 1;
-    
-    setConnectionStatus(prev => ({ 
-      ...prev, 
+
+    setConnectionStatus(prev => ({
+      ...prev,
       reconnecting: true,
       error: `Reconnecting... (${reconnectAttempts.current}/${maxReconnectAttempts})`
     }));
-    
+
     reconnectTimeoutRef.current = setTimeout(() => {
       connect();
     }, reconnectDelay);
@@ -251,32 +258,32 @@ export const useWebSocket = (
   */
 
   const handleMessage = (message: BackendMessage) => {
-    console.log('Received WebSocket message:', message);
-    
+    console.log('Received WebSocket message:', message); // Comentado para reduzir logs excessivos
+
     switch (message.type) {
       case 'signal.update':
         handleSignalUpdate(message);
         break;
-        
+
       case 'anomaly.alert':
         handleAnomalyAlert(message);
         break;
-        
+
       case 'system.heartbeat':
-        console.log('System heartbeat received:', message);
+        // console.log('System heartbeat received:', message); // Comentado para reduzir logs excessivos
         break;
-        
+
       case 'zmq.connected':
       case 'zmq.error':
       case 'zmq.warning':
       case 'zmq.heartbeat':
         console.log('ZeroMQ event:', message.type, message);
         break;
-        
+
       case 'connection.established':
         console.log('Connection established:', message);
         break;
-        
+
       default:
         console.log('Unknown message type:', message);
     }
@@ -284,36 +291,43 @@ export const useWebSocket = (
 
   const handleSignalUpdate = (message: BackendSignalUpdate) => {
     const { signalType, dataType, timestamp, value, anomalies } = message;
-    
+
     const signalPoint: SignalPoint = {
       timestamp,
       value,
-      quality: 1.0, 
+      quality: 1.0,
       metadata: { dataType, source: 'backend' }
     };
-    
+
     switch (signalType) {
       case 'cardiac':
         setLatestCardiacData(prev => ({
-          ...prev,  
-          [dataType]: signalPoint  
+          ...prev,
+          [dataType]: signalPoint
         }));
         break;
-        
+
       case 'eeg':
         setLatestEegData(prev => ({
           ...prev,
           [dataType === 'eegRaw' ? 'raw' : 'bands']: signalPoint
         }));
         break;
-        
+
       case 'camera':
-        setLatestCameraData(prev => ({
-          ...prev,
-          [dataType]: signalPoint
-        }));
+        // Lógica para lidar com diferentes tipos de dados de câmera
+        setLatestCameraData(prev => {
+          const newCameraData = { ...prev };
+          // CORRIGIDO: Alterado 'landmarks' para 'faceLandmarks'
+          if (dataType === 'faceLandmarks') {
+            newCameraData.faceLandmarks = signalPoint;
+          } else if (dataType === 'blinks') {
+            newCameraData.blinks = signalPoint;
+          }
+          return newCameraData;
+        });
         break;
-        
+
       case 'unity':
         setLatestUnityData(prev => ({
           ...prev,
@@ -322,24 +336,23 @@ export const useWebSocket = (
         break;
 
       case "sensors":
-        // ATUALIZADO: Lógica para lidar com diferentes tipos de dados de sensores
         setLatestSensorData(prev => {
           const newSensorData = { ...prev };
           if (dataType === 'accelerometer') {
             newSensorData.accelerometer = signalPoint;
-          } else if (dataType === 'gyroscope') { // NOVO: Processa dados do giroscópio
+          } else if (dataType === 'gyroscope') {
             newSensorData.gyroscope = signalPoint;
           }
           return newSensorData;
         });
         break;
     }
-    
+
     if (anomalies && anomalies.length > 0) {
       setRecentAnomalies(prev => [
-        ...anomalies.map(a => `${signalType}: ${a}`), 
-        ...prev  
-      ].slice(0, 10)); 
+        ...anomalies.map(a => `${signalType}: ${a}`),
+        ...prev
+      ].slice(0, 10));
     }
   };
 
@@ -347,16 +360,16 @@ export const useWebSocket = (
     if (message.severity === 'info') {
       return;
     }
-    
+
     console.warn(`🚨 ANOMALY: ${message.signalType} - ${message.message}`, message);
-    
+
     const timestamp = new Date(message.timestamp).toLocaleTimeString();
-    
-    const severityIcon = message.severity === 'critical' ? '🔴' : 
+
+    const severityIcon = message.severity === 'critical' ? '🔴' :
                         message.severity === 'warning' ? '🟡' : '🔵';
-    
+
     const anomalyMessage = `${severityIcon} [${timestamp}] ${message.signalType}: ${message.message}`;
-    
+
     setRecentAnomalies(prev => [anomalyMessage, ...prev].slice(0, 10));
   };
 
@@ -367,11 +380,11 @@ export const useWebSocket = (
 
   useEffect(() => {
     connect();
-    
+
     return () => {
       disconnect();
     };
-  }, [url]); 
+  }, [url]);
 
   useEffect(() => {
     return () => {
@@ -379,7 +392,7 @@ export const useWebSocket = (
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, []); 
+  }, []);
 
   /* ─────────────────────────────────────────────────────────────────────────────
                                    RETORNO
@@ -392,11 +405,11 @@ export const useWebSocket = (
     latestCameraData,
     latestUnityData,
     latestSensorData,
-    
+
     connectionStatus,
-    
+
     recentAnomalies,
-    
+
     connect,
     disconnect
   };

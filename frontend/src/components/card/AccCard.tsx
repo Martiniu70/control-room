@@ -1,5 +1,6 @@
-// src/components/AccelerometerCard.tsx
+// src/components/AccelerometerCard.tsx (Updated)
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import CardWrapper from './CardWrapper'; // Importar o CardWrapper
 
 interface AccelerometerData {
   x: number;
@@ -7,11 +8,10 @@ interface AccelerometerData {
   z: number; // Z será usado para a animação de distância
 }
 
-interface AccelerometerCardProps {
-  title: string;
-  data: AccelerometerData | null; // Receberá o último ponto de dados do acelerómetro
-  width?: number;
-  height?: number;
+interface AccelerometerContentProps { // Conteúdo real da animação
+  data: AccelerometerData; // Agora sabemos que data não será nula aqui
+  cardWidth: number;
+  cardHeight: number;
 }
 
 // Interface para um ponto individual na nova animação
@@ -27,14 +27,13 @@ interface AnimatedPoint {
   direction: number;   // 1 para baixo (Z positivo), -1 para cima (Z negativo)
 }
 
-const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
-  title,
+const AccelerometerCardContent: React.FC<AccelerometerContentProps> = ({
   data,
-  width = 300,
-  height = 200, // Altura um pouco maior para melhor visualização
+  cardWidth,
+  cardHeight,
 }) => {
-  const centerX = width / 2;
-  const svgHeight = height - 100; // Espaço para a SVG, considerando título e valores de texto
+  const centerX = cardWidth / 2;
+  const svgHeight = cardHeight - 100; // Espaço para a SVG, considerando título e valores de texto
   const centerY_svg = svgHeight / 2; // Centro Y da área da SVG para o vetor X,Y
   
   const maxVectorLength = Math.min(centerX, centerY_svg) * 0.8; // Comprimento máximo do vetor (80% do raio menor)
@@ -95,8 +94,6 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
 
   // useEffect para lidar com as atualizações de dados Z e gerar novos pontos
   useEffect(() => {
-    if (!data) return;
-
     const currentZ = data.z;
     const absZ = Math.abs(currentZ);
     const currentTime = performance.now();
@@ -132,7 +129,7 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
       
       newPoints.push({
           id: uniqueId,
-          x: Math.random() * width, // Posição X aleatória
+          x: Math.random() * cardWidth, // Posição X aleatória
           startY: startY,
           targetY: targetY,
           currentY: startY, // Inicializa na posição de início
@@ -143,22 +140,7 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
       });
     }
     setAnimatedPoints(prev => [...prev, ...newPoints]);
-  }, [data, width, svgHeight, centerY_svg, MAX_TRAVEL_DISTANCE, MIN_Z_THRESHOLD, Z_ACCELERATION_SCALE, BASE_SPEED_PX_PER_MS]);
-
-  // Se não houver dados, mostrar mensagem de espera
-  if (!data) {
-    return (
-      <div 
-        className="w-full h-full p-2 flex items-center justify-center" 
-        style={{ width: width, height: height }}
-      >
-        <div className="text-center text-gray-500">
-          <h2 className="text-sm font-medium mb-2">{title}</h2>
-          <p className="text-xs">Waiting for accelerometer data...</p>
-        </div>
-      </div>
-    );
-  }
+  }, [data, cardWidth, svgHeight, centerY_svg, MAX_TRAVEL_DISTANCE, MIN_Z_THRESHOLD, Z_ACCELERATION_SCALE, BASE_SPEED_PX_PER_MS]);
 
   // --- Visualização X, Y (mantido do código anterior) ---
   const currentX = data.x;
@@ -176,19 +158,17 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
   const endY = centerY_svg + vectorLength * Math.sin(angleRad); // Usar centerY_svg
 
   return (
-    <div className="w-full h-full p-2 flex flex-col items-center justify-center">
-      <h2 className="text-sm font-medium mb-2">{title}</h2>
-      
+    <div className="w-full h-full flex flex-col items-center justify-center">
       <div className="text-sm font-bold text-gray-800 mb-2">
         <p>X: {currentX.toFixed(2)} m/s²</p>
         <p>Y: {currentY.toFixed(2)} m/s²</p>
         <p className="text-purple-600">Z: {currentZ.toFixed(2)} m/s²</p> 
       </div>
 
-      <svg width={width} height={svgHeight} viewBox={`0 0 ${width} ${svgHeight}`} className="border rounded-md bg-gray-50 relative overflow-hidden">
+      <svg width={cardWidth} height={svgHeight} viewBox={`0 0 ${cardWidth} ${svgHeight}`} className="border rounded-md bg-gray-50 relative overflow-hidden">
         {/* Linhas de referência (eixos) para X, Y */}
         <line x1={centerX} y1={0} x2={centerX} y2={svgHeight} stroke="#ccc" strokeWidth="1" /> 
-        <line x1={0} y1={centerY_svg} x2={width} y2={centerY_svg} stroke="#ccc" strokeWidth="1" /> 
+        <line x1={0} y1={centerY_svg} x2={cardWidth} y2={centerY_svg} stroke="#ccc" strokeWidth="1" /> 
         
         {/* Ponto central */}
         <circle cx={centerX} cy={centerY_svg} r="3" fill="#3498db" />
@@ -223,6 +203,39 @@ const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
       </svg>
     </div>
   );
+};
+
+// Componente Wrapper para uso externo
+interface AccelerometerCardProps {
+    title: string;
+    data: AccelerometerData | null;
+    width?: number;
+    height?: number;
+}
+
+const AccelerometerCard: React.FC<AccelerometerCardProps> = ({
+    title,
+    data,
+    width,
+    height,
+}) => {
+    return (
+        <CardWrapper
+            title={title}
+            width={width}
+            height={height}
+            isLoading={!data}
+            noDataMessage="Waiting for accelerometer data..."
+        >
+            {data ? (
+                <AccelerometerCardContent
+                    data={data}
+                    cardWidth={width || 300}
+                    cardHeight={height || 200}
+                />
+            ) : null}
+        </CardWrapper>
+    );
 };
 
 export default AccelerometerCard;

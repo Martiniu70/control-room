@@ -1,11 +1,12 @@
 // App.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Sidebar from "./components/Sidebar";
 import MainGrid from "./components/MainGrid";
 import Header from "./components/Header";
 import SignalModal from "./components/SignalModal";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useSignalControl } from "./hooks/useSignalControl";
+import { CardConfig, getCardConfigBySignalName } from "./config/cardConfig";
 
 import { Layout } from "react-grid-layout";
 
@@ -26,7 +27,6 @@ interface AccProcessedData{
   timestamp: number;
 }
 
-// NOVO: Interface para os dados processados do giroscópio
 interface GyroProcessedData {
   x: number[];
   y: number[];
@@ -35,18 +35,39 @@ interface GyroProcessedData {
 }
 
 interface EegRawProcessedData {
-  [channel: string]: DataPoint[]; 
+  [channel: string]: DataPoint[];
 }
 
+// NOVO: Interface para os dados processados de Face Landmarks
+interface FaceLandmarksProcessedData {
+  landmarks: number[][];
+  gaze_vector: { dx: number; dy: number };
+  ear: number;
+  blink_rate: number;
+  blink_counter: number; // <-- Esta propriedade é obrigatória
+  confidence: number;
+  frame_b64: string;
+  attentionPattern: string;
+  isBlinking: boolean;
+  frameNumber: number;
+  frameTimestamp: number;
+  anomalyType: string;
+  timestamp: number; // Timestamp do SignalPoint
+}
+
+
+// ATUALIZADO: A interface CardType agora usa propriedades da CardConfig
 interface CardType {
   id: string;
   label: string;
   colSpan: number;
   rowSpan: number;
-  // ATUALIZADO: Adicionado 'gyroscope' ao SignalType
-  signalType: 'hr' | 'ecg' | 'eeg' | "gyroscope" | "accelerometer" | 'steering' | 'speed' | 'eegRaw'; 
-  component: string;
-  signalName: string;
+  signalType: CardConfig['signalType']; // Usa o tipo de signalType da CardConfig
+  componentType: CardConfig['componentType']; // NOVO: Adiciona o tipo de componente para renderização dinâmica
+  signalName: string; // O nome do sinal específico (e.g., 'hr_data', 'ecg_signal')
+  component: string; // O componente backend associado (e.g., 'websocket')
+  unit?: string; // Opcional, pode vir da config
+  color?: string; // Opcional, pode vir da config
 }
 
 interface Tab {
@@ -55,12 +76,13 @@ interface Tab {
 }
 
 function App() {
-  const { 
+  const {
     latestCardiacData,
-    latestEegData, 
-    latestUnityData, 
-    latestSensorData, // Inclui dados de sensores como giroscópio e acelerômetro
-    connectionStatus, 
+    latestEegData,
+    latestCameraData, // Usar para faceLandmarks
+    latestUnityData,
+    latestSensorData,
+    connectionStatus,
     recentAnomalies,
     connect,
     disconnect
@@ -83,9 +105,9 @@ function App() {
   const [ecgDataBatches, setEcgDataBatches] = useState<EcgBatch[]>([]);
   const [throttledEcgData, setThrottledEcgData] = useState<DataPoint[]>([]);
   const [latestAccelerometerData, setLatestAccelerometerData] = useState<AccProcessedData | null>(null);
-  // NOVO: Estado para armazenar os dados processados do giroscópio
   const [latestGyroscopeData, setLatestGyroscopeData] = useState<GyroProcessedData | null>(null);
   const [eegRawData, setEegRawData] = useState<EegRawProcessedData>({});
+  const [faceLandmarksData, setFaceLandmarksData] = useState<FaceLandmarksProcessedData | null>(null); // NOVO ESTADO
 
   const lastEcgUpdateTimeRef = useRef(0);
   const ECG_THROTTLE_INTERVAL_MS = 1;
@@ -93,9 +115,9 @@ function App() {
   const ECG_WINDOW_DURATION_SECONDS = 5;
   const ECG_DOWNSAMPLING_FACTOR = 10;
 
-  const EEG_SAMPLE_RATE = 250; 
-  const EEG_WINDOW_DURATION_SECONDS = 5; 
-  const EEG_DOWNSAMPLING_FACTOR = 1; 
+  const EEG_SAMPLE_RATE = 250;
+  const EEG_WINDOW_DURATION_SECONDS = 5;
+  const EEG_DOWNSAMPLING_FACTOR = 1;
 
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, label: "Tab 1" }]);
   const [currentTabId, setCurrentTabId] = useState<number>(1);
@@ -104,7 +126,7 @@ function App() {
   const [cardsPerTab, setCardsPerTab] = useState<Record<number, CardType[]>>({ 1: [] });
   const [cardIdCounter, setCardIdCounter] = useState<number>(1);
 
-  // Atualizar dados de frequencia cardiaca
+  // Atualizar dados de frequência cardíaca
   useEffect(() => {
     if (latestCardiacData?.hr) {
       const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
@@ -112,7 +134,7 @@ function App() {
         x: currentTimeSeconds,
         value: latestCardiacData.hr.value
       };
-      setHeartRateData(prev => [...prev, newDataPoint].slice(-200)); 
+      setHeartRateData(prev => [...prev, newDataPoint].slice(-200));
     }
   }, [latestCardiacData?.hr]);
 
@@ -124,7 +146,7 @@ function App() {
         timeSeconds : currentTimeSeconds,
         values: latestCardiacData.ecg.value
       };
-      const maxBatchesToKeep = 100; 
+      const maxBatchesToKeep = 100;
       setEcgDataBatches(prev => [...prev, newEcgBatch].slice(-maxBatchesToKeep));
     }
   }, [latestCardiacData?.ecg]);
@@ -157,9 +179,9 @@ function App() {
       setThrottledEcgData(newEcgPoints);
       lastEcgUpdateTimeRef.current = now;
     }
-  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS, ECG_SAMPLE_RATE, ECG_WINDOW_DURATION_SECONDS, ECG_DOWNSAMPLING_FACTOR]); 
+  }, [ecgDataBatches, ECG_THROTTLE_INTERVAL_MS, ECG_SAMPLE_RATE, ECG_WINDOW_DURATION_SECONDS, ECG_DOWNSAMPLING_FACTOR]);
 
-  // useEffect para processar e aplicar throttling aos dados do acelerometro
+  // Efeito para processar e aplicar throttling aos dados do acelerômetro
   useEffect(() => {
     if(latestSensorData?.accelerometer?.value){
       const acc = latestSensorData.accelerometer.value.accelerometer;
@@ -178,11 +200,10 @@ function App() {
     }
   }, [latestSensorData?.accelerometer]);
 
-  // NOVO: useEffect para processar os dados do giroscópio
+  // Efeito para processar os dados do giroscópio
   useEffect(() => {
     if(latestSensorData?.gyroscope?.value){
       const gyro = latestSensorData.gyroscope.value.gyroscope;
-      // Assume que 'gyro.x', 'gyro.y', 'gyro.z' já são arrays
       setLatestGyroscopeData({
         x: gyro.x,
         y: gyro.y,
@@ -193,7 +214,7 @@ function App() {
   }, [latestSensorData?.gyroscope]);
 
 
-  // NOVO: Efeito para processar os dados brutos do EEG
+  // Efeito para processar os dados brutos do EEG
   useEffect(() => {
     if (latestEegData?.raw && typeof latestEegData.raw.value === 'object') {
       const currentTimeSeconds = (Date.now() - startTimeRef.current) / 1000;
@@ -202,28 +223,60 @@ function App() {
 
       setEegRawData(prev => {
         const newEegRawData: EegRawProcessedData = { ...prev };
-        
+
         Object.entries(eegRawValue).forEach(([channelName, values]) => {
           if (Array.isArray(values)) {
             const currentChannelData = newEegRawData[channelName] || [];
-            
+
             const newPointsForChannel: DataPoint[] = values.map((val, index) => ({
               x: currentTimeSeconds + (index * sampleDuration),
               value: val
             }));
-            
+
             const combinedData = [...currentChannelData, ...newPointsForChannel];
             const minTimeForWindow = currentTimeSeconds - EEG_WINDOW_DURATION_SECONDS;
-            
-            newEegRawData[channelName] = combinedData.filter(point => point.x >= minTimeForWindow);
+
+            // Filtra os dados para manter apenas os pontos dentro da janela de tempo
+            const filteredData = combinedData.filter(point => point.x >= minTimeForWindow);
+
+            // Garante que o array não exceda um tamanho máximo para evitar estouro de memória
+            const maxPointsPerChannel = EEG_SAMPLE_RATE * EEG_WINDOW_DURATION_SECONDS * 1.2; // 20% a mais para buffer
+            newEegRawData[channelName] = filteredData.slice(-maxPointsPerChannel);
           }
         });
+        // console.log("App.tsx - eegRawData atualizado:", newEegRawData); // Log para depuração
         return newEegRawData;
       });
     }
   }, [latestEegData?.raw, EEG_SAMPLE_RATE, EEG_WINDOW_DURATION_SECONDS]);
 
-  // Funcoes de manipulação de UI
+  // NOVO EFEITO: Processar dados de Face Landmarks
+  useEffect(() => {
+    if (latestCameraData?.faceLandmarks?.value) {
+      const landmarksValue = latestCameraData.faceLandmarks.value;
+      // Adicionado console.log para inspecionar o objeto landmarksValue
+      console.log("App.tsx - landmarksValue recebido:", landmarksValue);
+
+      setFaceLandmarksData({
+        landmarks: landmarksValue.landmarks,
+        gaze_vector: landmarksValue.gaze_vector,
+        ear: landmarksValue.ear,
+        blink_rate: landmarksValue.blink_rate,
+        blink_counter: landmarksValue.blink_counter, // <-- Adicionado blink_counter
+        confidence: landmarksValue.confidence,
+        frame_b64: landmarksValue.frame_b64,
+        attentionPattern: landmarksValue.attentionPattern,
+        isBlinking: landmarksValue.isBlinking,
+        frameNumber: landmarksValue.frameNumber,
+        frameTimestamp: landmarksValue.frameTimestamp,
+        anomalyType: landmarksValue.anomalyType,
+        timestamp: latestCameraData.faceLandmarks.timestamp,
+      });
+    }
+  }, [latestCameraData?.faceLandmarks]);
+
+
+  // Funções de manipulação de UI
   const updateLayout = (newLayout: Layout[]) => {
     setLayoutsPerTab((prev) => ({
       ...prev,
@@ -260,45 +313,46 @@ function App() {
     });
   };
 
-  // Mapeamento de tipos de sinal para labels
-  const labelMap: Record<CardType["signalType"], string> = {
-    hr: "Heart Rate",
-    ecg: "ECG",
-    eeg: "EEG", 
-    eegRaw: "EEG Raw", 
-    gyroscope: "Gyroscope", // NOVO: Label para giroscópio
-    accelerometer: "Accelerometer",
-    steering: "Steering",
-    speed: "Speed"
-  };
-
+  /**
+   * @function addCard
+   * @param {string} component - O componente backend associado (ex: 'websocket').
+   * @param {string} signalName - O nome do sinal específico (ex: 'hr_data', 'ecg_signal').
+   * @description Adiciona um novo card ao dashboard com base no sinal selecionado.
+   * Utiliza a configuração centralizada para determinar as propriedades do card.
+   */
   const addCard = (component: string, signalName: string) => {
-    let signalType: CardType["signalType"] = "hr";
-    if (signalName.includes("ecg")) signalType = "ecg";
-    else if (signalName.includes("eegRaw")) signalType = "eegRaw"; 
-    else if (signalName.includes("eeg")) signalType = "eeg";
-    else if (signalName.includes("accelerometer")) signalType = "accelerometer";
-    else if (signalName.includes("gyroscope")) signalType = "gyroscope"; // NOVO: Lógica para giroscópio
-    else if (signalName.includes("steering")) signalType = "steering";
-    else if (signalName.includes("speed")) signalType = "speed";
+    // Obtém a configuração do card com base no nome do sinal
+    const cardConfig = getCardConfigBySignalName(signalName);
 
+    if (!cardConfig) {
+      console.warn(`No card configuration found for signal: ${signalName}`);
+      // Opcional: mostrar uma mensagem de erro para o usuário
+      return;
+    }
+
+    // Cria o novo card usando as propriedades da configuração
     const newCard: CardType = {
       id: `${currentTabId}-${cardIdCounter}`,
-      label: `${labelMap[signalType]} (${signalName})`,
-      colSpan: 1,
-      rowSpan: 1,
-      signalType,
-      component,
-      signalName
+      label: `${cardConfig.label} (${signalName})`, // Combina o rótulo da config com o nome do sinal
+      colSpan: cardConfig.defaultColSpan,
+      rowSpan: cardConfig.defaultRowSpan,
+      signalType: cardConfig.signalType,
+      componentType: cardConfig.componentType, // Define o tipo de componente aqui
+      signalName: signalName,
+      component: component,
+      unit: cardConfig.unit, // Adiciona a unidade se disponível na config
+      color: cardConfig.color, // Adiciona a cor se disponível na config
     };
-    
+
     setCardsPerTab((prev) => ({
       ...prev,
       [currentTabId]: [...(prev[currentTabId] || []), newCard],
     }));
     setCardIdCounter((prev) => prev + 1);
 
-    if(!activeSignals[component]?.includes(signalName)){
+    // Verifique se o sinal já está ativo antes de tentar habilitá-lo
+    const isSignalAlreadyActive = activeSignals[component]?.includes(signalName);
+    if (!isSignalAlreadyActive) {
       enableSignal(component, signalName);
     }
   };
@@ -310,15 +364,15 @@ function App() {
 
   const handleSignalSelect = (component: string, signalName: string) => {
     addCard(component, signalName)
-    setModalOpen(false); 
+    setModalOpen(false);
   };
-  
-  const currentCards = cardsPerTab[currentTabId] || [];
+
+  const currentCards = useMemo(() => cardsPerTab[currentTabId] || [], [cardsPerTab, currentTabId]);
 
   return (
     <div className="flex flex-col h-full">
       <div className={`px-4 py-2 text-sm text-white ${
-        connectionStatus.connected ? 'bg-green-600' : 
+        connectionStatus.connected ? 'bg-green-600' :
         connectionStatus.reconnecting ? 'bg-yellow-600' : 'bg-red-600'
       }`}>
         <div className="flex justify-between items-center">
@@ -333,7 +387,7 @@ function App() {
                 ⚠️ {recentAnomalies.length} Anomalias
               </span>
             )}
-            <button 
+            <button
               onClick={connectionStatus.connected ? disconnect : connect}
               className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs transition"
             >
@@ -349,7 +403,7 @@ function App() {
       </div>
 
       <Header onAddCard={handleAddCardClick} />
-      
+
       <div className="flex flex-1">
         <Sidebar
           tabs={tabs}
@@ -360,14 +414,14 @@ function App() {
         />
         <main className="flex-1 bg-gray-100 p-4 overflow-hidden">
           <MainGrid
-            items={currentCards}
-            layout={layoutsPerTab[currentTabId] || []}
+            activeSignals={currentCards}
             onLayoutChange={updateLayout}
-            heartRateData={heartRateData}
+            hrData={heartRateData}
             ecgData={throttledEcgData}
             accelerometerData={latestAccelerometerData}
-            gyroscopeData={latestGyroscopeData} // NOVO: Passar dados do giroscópio
+            gyroscopeData={latestGyroscopeData}
             eegRawData={eegRawData}
+            faceLandmarksData={faceLandmarksData} // NOVO: Passa os dados de face landmarks
             onDisableSignal={(cardId) => {
               const card = currentCards.find(c => c.id === cardId);
               if (card) {
@@ -378,7 +432,7 @@ function App() {
         </main>
       </div>
 
-      <SignalModal 
+      <SignalModal
         open={modalOpen}
         availableSignals={availableSignals}
         loading={signalsLoading}
@@ -393,11 +447,12 @@ function App() {
             <span>Último HR: {heartRateData[heartRateData.length - 1]?.value ?? 'N/A'} bpm</span>
             <span>Batches ECG (Bruto): {ecgDataBatches.length}</span>
             <span>Pontos ECG (Throttled): {throttledEcgData.length}</span>
-            <span>Pontos EEG Raw (ch0): {eegRawData['ch0']?.length ?? 0}</span> 
+            <span>Pontos EEG Raw (ch0): {eegRawData['ch0']?.length ?? 0}</span>
             <span>Tempo de Execução: {((Date.now() - startTimeRef.current) / 1000).toFixed(1)}s</span>
             <span>Conectado: {connectionStatus.connected ? 'Sim' : 'Não'}</span>
             <span>Anomalias: {recentAnomalies.length}</span>
             <span>Sinais a Carregar: {signalsLoading ? 'Sim' : 'Não'}</span>
+            <span>Frame FaceLandmarks: {faceLandmarksData?.frameNumber ?? 'N/A'}</span> {/* NOVO LOG */}
           </div>
         </div>
       )}

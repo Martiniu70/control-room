@@ -136,9 +136,9 @@ class CardioWheelGyrGenerator:
                 # Gerar sample GYR baseado no padrão e anomalia atual
                 gyrX, gyrY, gyrZ = self._generateGyrSample(i)
                 
-                xSamples.append(int(gyrX))  # ADC values são inteiros
-                ySamples.append(int(gyrY))
-                zSamples.append(int(gyrZ))
+                xSamples.append(gyrX)  # ADC values são inteiros
+                ySamples.append(gyrY)
+                zSamples.append(gyrZ)
                 
                 # Avançar contadores
                 self.sampleCounter += 1
