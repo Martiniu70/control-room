@@ -53,8 +53,9 @@ class ZeroMQPublisher:
         # Estado do publisher
         self.state = PublisherState.STOPPED
         self.startTime: Optional[datetime] = None
-        self.availableTopics: Set[str] = set(mockConfig.topicFrequencies.keys())
-        self.activeTopics: Set[str] = set()
+        self.availableTopics = settings.signalControl.zeroMQTopics.copy()
+        defaultActiveStates = settings.signalControl.defaultActiveStates["publisher"]
+        self.activeTopics: Set[str] = {signal for signal, active in defaultActiveStates.items() if active}
         
         # Componentes ZeroMQ
         self.context: Optional[zmq.asyncio.Context] = None

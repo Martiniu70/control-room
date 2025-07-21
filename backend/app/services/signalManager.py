@@ -18,6 +18,7 @@ from ..models.signals.cardiacSignal import CardiacSignal
 from ..models.signals.eegSignal import EEGSignal
 from ..models.signals.sensorSignal import SensorsSignal
 from ..models.signals.cameraSignal import CameraSignal
+from ..models.signals.unitySignal import UnitySignal
 from ..models.base import SignalPoint
 from ..core import eventManager, settings
 from ..core.signalControl import SignalControlInterface, SignalState, ComponentState, signalControlManager
@@ -33,7 +34,8 @@ class SignalManager(SignalControlInterface):
             "cardiac": CardiacSignal(),
             "eeg": EEGSignal(),
             "sensors": SensorsSignal(),
-            "camera": CameraSignal()
+            "camera": CameraSignal(),
+            "unity": UnitySignal()
         }
         
         # Mapeamento de data types por sinal 
@@ -41,12 +43,14 @@ class SignalManager(SignalControlInterface):
             "cardiac": ["ecg", "hr"],
             "eeg": ["eegRaw", "eegBands"],
             "sensors": ["accelerometer", "gyroscope"],
-            "camera": ["faceLandmarks"]
+            "camera": ["faceLandmarks"],
+            "unity": ["alcohol_level", "car_information"]
         }
         
         # Signal Control properties
-        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
-        self.activeSignals: Set[str] = set(self.availableSignals)  # Todos ativos por default
+        self.availableSignals = settings.signalControl.signalTypes.copy()
+        defaultActiveStates = settings.signalControl.defaultActiveStates["manager"]
+        self.activeSignals: Set[str] = {signal for signal, active in defaultActiveStates.items() if active}
         
         # Mapeamento de métodos específicos de status por sinal
         self.statusMethods = {
@@ -305,7 +309,18 @@ class SignalManager(SignalControlInterface):
                 except Exception as e:
                     errors.append(f"Camera processing failed: {e}")
                     overallSuccess = False
-            
+
+            # Processar dados Unity
+            if "alcohol_level" in data or "car_information" in data:
+                try:
+                    unitySuccess = await self._processUnityData(data, timestamp)
+                    overallSuccess = overallSuccess and unitySuccess
+                    if unitySuccess:
+                        processedCount += 1
+                except Exception as e:
+                    errors.append(f"Unity processing failed: {e}")
+                    overallSuccess = False
+                        
             # Verificar se processamos alguma coisa
             if processedCount > 0:
                 self.logger.debug(f"Successfully processed {processedCount} signal types from {source}")
@@ -325,6 +340,44 @@ class SignalManager(SignalControlInterface):
             self.logger.error(f"Error processing ZeroMQ data: {e}")
             self.stats["totalErrors"] += 1
             return False
+
+    async def _processUnityData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
+        """Processa dados Unity específicos com validação e filtering"""
+        success = True
+        
+        # Processar Alcohol Level se presente
+        if "alcohol_level" in data:
+            try:
+                alcoholSuccess = await self.addSignalData(
+                    signalType="unity",
+                    dataType="alcohol_level", 
+                    value={"alcohol_level": data["alcohol_level"]},
+                    timestamp=timestamp
+                )
+                success = success and alcoholSuccess
+                if not alcoholSuccess:
+                    self.logger.warning(f"Failed to process alcohol level data: {data['alcohol_level']}")
+            except Exception as e:
+                self.logger.error(f"Error processing alcohol level data: {e}")
+                success = False
+        
+        # Processar Car Information se presente
+        if "car_information" in data:
+            try:
+                carSuccess = await self.addSignalData(
+                    signalType="unity",
+                    dataType="car_information",
+                    value={"car_information": data["car_information"]},
+                    timestamp=timestamp
+                )
+                success = success and carSuccess
+                if not carSuccess:
+                    self.logger.warning(f"Failed to process car information data")
+            except Exception as e:
+                self.logger.error(f"Error processing car information data: {e}")
+                success = False
+        
+        return success
 
     async def _processCameraData(self, data: Dict[str, Any], timestamp: Optional[float]) -> bool:
         """Processa dados de câmera específicos com validação e filtering"""
@@ -748,7 +801,36 @@ class SignalManager(SignalControlInterface):
         elif "variação" in message_lower and "ear" in message_lower:
             anomaly_type = "ear_instability"
             threshold = 0.2  # Valor hardcoded na detecção
-        
+
+        # Detectar tipo de anomalia Unity
+        elif "álcool" in message_lower and "limite" in message_lower:
+            if "perigoso" in message_lower:
+                anomaly_type = "dangerous_alcohol"
+                threshold = settings.signals.unityConfig["alcohol_level"]["dangerLimit"]
+            else:
+                anomaly_type = "high_alcohol"
+                threshold = settings.signals.unityConfig["alcohol_level"]["legalLimit"]
+        elif "velocidade" in message_lower and ("excessiva" in message_lower or "alta" in message_lower):
+            if "perigosa" in message_lower:
+                anomaly_type = "dangerous_speed"
+                threshold = settings.signals.unityConfig["car_information"]["speed"]["dangerSpeedThreshold"]
+            else:
+                anomaly_type = "speeding"
+                threshold = settings.signals.unityConfig["car_information"]["speed"]["speedingThreshold"]
+        elif "faixa" in message_lower and ("saída" in message_lower or "fora" in message_lower):
+            if "fora" in message_lower:
+                anomaly_type = "lane_departure_critical"
+                threshold = settings.signals.unityConfig["car_information"]["lane_centrality"]["dangerThreshold"]
+            else:
+                anomaly_type = "lane_departure_warning"
+                threshold = settings.signals.unityConfig["car_information"]["lane_centrality"]["warningThreshold"]
+        elif "condução" in message_lower and ("perigosa" in message_lower or "instável" in message_lower):
+            anomaly_type = "dangerous_driving"
+            threshold = None
+        elif "perigo crítico" in message_lower:
+            anomaly_type = "critical_driving_danger"
+            threshold = None
+                
         else:
             anomaly_type = "unknown"
             threshold = None
@@ -770,7 +852,9 @@ class SignalManager(SignalControlInterface):
         if any(word in message for word in [
             "severe", "crítico", "crítica", "saturação", "solto", "muito baixa", "muito alta",
             "error", "failed", "connection", "timeout", "impacto", "spin", "derrapagem",
-            "emergência", "travagem", "sonolência crítica", "confiança baixa", "qualidade alta"
+            "emergência", "travagem", "sonolência crítica", "confiança baixa", "qualidade alta",
+            "perigo crítico", "álcool perigoso", "velocidade muito perigosa", "fora da faixa",
+            "nível de álcool perigoso"
         ]):
             return "critical"
         
@@ -780,7 +864,8 @@ class SignalManager(SignalControlInterface):
             "drift", "artefacto", "movimento", "variabilidade", "brusco", "rápida",
             "agressiva", "vibração", "rotação", "instabilidade", "sonolência moderada",
             "piscadelas baixa", "piscadelas excessiva", "olhar desviado", "errático",
-            "qualidade moderada"
+            "qualidade moderada", "álcool acima", "excesso de velocidade", "próximo da saída", "condução perigosa",
+            "condução instável", "mudança súbita", "aumento súbito"
         ]):
             return "warning"
         

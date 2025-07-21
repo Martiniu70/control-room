@@ -61,8 +61,8 @@ class SignalControlInterface(ABC):
     """
     Interface que todos os componentes devem implementar para controlo de sinais.
     
-    Esta interface garante que todos os componentes (MockZeroMQController, ZeroMQListener,
-    SignalManager, WebSocketManager) tenham métodos consistentes para controlo.
+    Esta interface garante que todos os componentes (ZeroMQPublisher, ZeroMQListener,
+    ZeroMQProcessor, SignalManager, WebSocketManager) tenham métodos consistentes para controlo.
     """
     
     @abstractmethod
@@ -214,6 +214,7 @@ class SignalControlManager:
         
         # Configurações centralizadas
         self.config = settings.signalControl
+        print("\n\n\n\n\n\n\n NO INIT DO SIGNAL CONTROL MANAGER")
         
         # Componentes registados
         self.components: Dict[str, SignalControlInterface] = {}
@@ -238,10 +239,11 @@ class SignalControlManager:
             "startTime": datetime.now().isoformat()
         }
         
-        # Carregar estado persistido
+        # Carregar estado 
         self._loadPersistedState()
         
         self.logger.info("SignalControlManager initialized")
+        print("\n\n\n\n\n\n\n\n NO FIM DO INIT DE SIGNAL CONTROL MANAGER")
     
     def registerComponent(self, name: str, component: SignalControlInterface) -> None:
         """
@@ -696,7 +698,7 @@ class SignalControlManager:
         except Exception as e:
             self.logger.error(f"Error resetting component {component}: {e}")
             return False
-    
+        
     def _loadPersistedState(self) -> None:
         """Carrega estado persistido se configurado"""
         if not self.config.persistState:
@@ -704,12 +706,50 @@ class SignalControlManager:
         
         try:
             state = signalStateManager.loadState()
-            if state:
-                # TODO: Aplicar estado carregado aos componentes
-                self.logger.info("Loaded persisted signal control state")
+            if state and "components" in state:
+                self.logger.warning("Applying persisted signal control state...")
+                
+                # Aplicar estado a cada componente
+                for compName, compState in state["components"].items():
+                    if compName in self.components:
+                        self._applyStateToComponent(compName, compState)
+                
+                self.logger.warning("Loaded persisted signal control state")
+            else:
+                self.logger.warning("No valid persisted state found, using defaults")
         except Exception as e:
             self.logger.warning(f"Could not load persisted state: {e}")
+
     
+    async def _applyStateToComponent(self, compName: str, compState: Dict[str, Any]) -> None:
+        """Aplica estado persistido a um componente específico"""
+        try:
+            comp = self.components[compName]
+            signals = compState.get("signals", {})
+            
+            for signal, stateStr in signals.items():
+                try:
+                    # Converter string state para boolean
+                    isActive = (stateStr == "active")
+                    currentState = comp.getSignalState(signal)
+                    
+                    # Só aplicar se estado for diferente
+                    if (isActive and currentState != SignalState.ACTIVE) or \
+                    (not isActive and currentState == SignalState.ACTIVE):
+                        
+                        if isActive:
+                            await comp.enableSignal(signal)
+                        else:
+                            await comp.disableSignal(signal)
+                        
+                        self.logger.debug(f"Applied state to {compName}.{signal}: {stateStr}")
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to apply state to {compName}.{signal}: {e}")
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to apply state to component {compName}: {e}")
+        
     async def _saveStateIfConfigured(self) -> None:
         """Salva estado se persistência estiver configurada"""
         if not self.config.persistState:

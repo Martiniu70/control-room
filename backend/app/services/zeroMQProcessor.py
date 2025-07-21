@@ -54,8 +54,9 @@ class ZeroMQProcessor(SignalControlInterface):
         self.validationConfig = zmqConfig.topicValidationConfig
         
         # Signal Control properties
-        self.availableSignals = list(self.topicSignalMapping.keys())
-        self.activeSignals: Set[str] = set(self.availableSignals)  # Todos ativos por default
+        self.availableSignals = settings.signalControl.zeroMQTopics.copy()
+        defaultActiveStates = settings.signalControl.defaultActiveStates["processor"]
+        self.activeSignals: Set[str] = {signal for signal, active in defaultActiveStates.items() if active}
         
         # Estatísticas de processamento por tópico
         self.processingStats = {
@@ -340,6 +341,8 @@ class ZeroMQProcessor(SignalControlInterface):
             "CardioWheel_GYR": self._processCardioWheelGYR,
             "BrainAcess_EEG": self._processBrainAccessEEG,
             "Camera_FaceLandmarks": self._processCameraFaceLandmarks,
+            "Unity_Alcohol": self._processUnityAlcohol,
+            "Unity_CarInfo": self._processUnityCarInfo,
             "Control": self._processSystemControl,
             "Timestamp": self._processSystemTimestamp,
             "Cfg": self._processSystemConfig
@@ -1003,6 +1006,190 @@ class ZeroMQProcessor(SignalControlInterface):
                 rawData=data
             )
         
+    async def _processUnityAlcohol(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Processa dados de nível de álcool do Unity.
+        
+        FORMATO INPUT ZeroMQ:
+        {
+            "ts": "timestamp",
+            "labels": ["alcohol_level"],
+            "data": [[0.3]]
+        }
+        
+        FORMATO OUTPUT SignalManager:
+        {
+            "signalType": "unity",
+            "dataType": "alcohol_level",
+            "timestamp": timestamp,
+            "value": {
+                "alcohol_level": 0.3
+            }
+        }
+        """
+        
+        try:
+            # Extrair timestamp
+            timestamp = float(data.get("ts", 0))
+            
+            # Extrair dados das labels/data
+            labels = data.get("labels", [])
+            dataArray = data.get("data", [])
+            
+            if not dataArray or len(dataArray) == 0:
+                self.logger.warning(f"Empty data array in Unity_Alcohol")
+                return None
+            
+            # Processar primeira linha de dados
+            firstRow = dataArray[0]
+            
+            if len(firstRow) != len(labels):
+                self.logger.error(f"Data row length ({len(firstRow)}) doesn't match labels length ({len(labels)})")
+                return None
+            
+            # Mapear dados baseado nas labels
+            alcoholLevel = None
+            
+            for i, label in enumerate(labels):
+                if i >= len(firstRow):
+                    continue
+                    
+                if label == "alcohol_level":
+                    alcoholLevel = float(firstRow[i])
+            
+            # Validação obrigatória
+            if alcoholLevel is None:
+                self.logger.warning(f"Missing alcohol_level in Unity_Alcohol data")
+                return None
+            
+            # Validação de range usando configurações centralizadas
+            alcoholConfig = settings.signals.unityConfig["alcohol_level"]
+            validRange = alcoholConfig["normalRange"]
+            
+            if not (0.0 <= alcoholLevel <= 3.0):  # Range absoluto
+                self.logger.warning(f"Alcohol level out of absolute range: {alcoholLevel}")
+                return None
+            
+            # Estrutura final para SignalManager
+            signalMapping = self.topicSignalMapping["Unity_Alcohol"]
+            
+            return {
+                "timestamp": timestamp,
+                "source": "unity",
+                "signalType": signalMapping["signalType"],  # "unity"
+                "dataType": signalMapping["dataType"],      # "alcohol_level"
+                "data": {
+                    "alcohol_level": alcoholLevel
+                }
+            }
+            
+        except Exception as e:
+            raise ZeroMQProcessingError(
+                topic="Unity_Alcohol",
+                operation="alcohol_processing",
+                reason=str(e),
+                rawData=data
+            )
+    
+    async def _processUnityCarInfo(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Processa dados de informação do carro do Unity.
+        
+        FORMATO INPUT ZeroMQ:
+        {
+            "ts": "timestamp",
+            "labels": ["speed", "lane_centrality"],
+            "data": [[65.0, 0.8]]
+        }
+        
+        FORMATO OUTPUT SignalManager:
+        {
+            "signalType": "unity",
+            "dataType": "car_information", 
+            "timestamp": timestamp,
+            "value": {
+                "speed": 65.0,
+                "lane_centrality": 0.8
+            }
+        }
+        """
+        
+        try:
+            # Extrair timestamp
+            timestamp = float(data.get("ts", 0))
+            
+            # Extrair dados das labels/data
+            labels = data.get("labels", [])
+            dataArray = data.get("data", [])
+            
+            if not dataArray or len(dataArray) == 0:
+                self.logger.warning(f"Empty data array in Unity_CarInfo")
+                return None
+            
+            # Processar primeira linha de dados
+            firstRow = dataArray[0]
+            
+            if len(firstRow) != len(labels):
+                self.logger.error(f"Data row length ({len(firstRow)}) doesn't match labels length ({len(labels)})")
+                return None
+            
+            # Mapear dados baseado nas labels
+            speed = None
+            laneCentrality = None
+            
+            for i, label in enumerate(labels):
+                if i >= len(firstRow):
+                    continue
+                    
+                if label == "speed":
+                    speed = float(firstRow[i])
+                elif label == "lane_centrality":
+                    laneCentrality = float(firstRow[i])
+            
+            # Validações obrigatórias
+            if speed is None or laneCentrality is None:
+                self.logger.warning(f"Missing required fields in Unity_CarInfo: speed={speed}, lane_centrality={laneCentrality}")
+                return None
+            
+            # Validações de range usando configurações centralizadas
+            carConfig = settings.signals.unityConfig["car_information"]
+            
+            # Validar velocidade
+            speedRange = carConfig["speed"]["normalRange"]
+            if not (speedRange[0] <= speed <= speedRange[1]):  # Range absoluto
+                self.logger.warning(f"Speed out of absolute range: {speed}")
+                return None
+            
+            # Validar centralidade
+            centralityRange = carConfig["lane_centrality"]["normalRange"]
+            if not (centralityRange[0] <= laneCentrality <= centralityRange[1]):  # Range absoluto
+                self.logger.warning(f"Lane centrality out of range: {laneCentrality}")
+                return None
+            
+            # Estrutura final para SignalManager
+            signalMapping = self.topicSignalMapping["Unity_CarInfo"]
+            
+            return {
+                "timestamp": timestamp,
+                "source": "unity",
+                "signalType": signalMapping["signalType"],  # "unity"
+                "dataType": signalMapping["dataType"],      # "car_information"
+                "data": {
+                    "car_information": {
+                        "speed": speed,
+                        "lane_centrality": laneCentrality
+                    }
+                }
+            }
+            
+        except Exception as e:
+            raise ZeroMQProcessingError(
+                topic="Unity_CarInfo",
+                operation="car_info_processing",
+                reason=str(e),
+                rawData=data
+            )
+            
     async def _processSystemControl(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Processa mensagens de controlo do sistema.

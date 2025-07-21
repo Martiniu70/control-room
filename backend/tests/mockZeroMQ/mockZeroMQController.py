@@ -25,7 +25,9 @@ from .generators import (
     cardioWheelGyrGenerator, CardioWheelGyrGenerator,
     polarPpiGenerator, PolarPpiGenerator,
     brainAccessEegGenerator, BrainAccessEegGenerator,
-    cameraFaceLandmarksGenerator, CameraFaceLandmarksGenerator
+    cameraFaceLandmarksGenerator, CameraFaceLandmarksGenerator,
+    unityAlcoholGenerator, UnityAlcoholGenerator,
+    unityCarInfoGenerator, UnityCarInfoGenerator
 )
 
 class ControllerState(Enum):
@@ -63,7 +65,9 @@ class MockZeroMQController(SignalControlInterface):
             "CardioWheel_ACC": cardioWheelAccGenerator,
             "CardioWheel_GYR": cardioWheelGyrGenerator,
             "BrainAcess_EEG": brainAccessEegGenerator,
-            "Camera_FaceLandmarks": cameraFaceLandmarksGenerator
+            "Camera_FaceLandmarks": cameraFaceLandmarksGenerator,
+            "Unity_Alcohol": unityAlcoholGenerator,
+            "Unity_CarInfo": unityCarInfoGenerator
         }
         
         # Configurações de frequência por tópico
@@ -72,7 +76,8 @@ class MockZeroMQController(SignalControlInterface):
         
         # Signal Control properties
         self.availableSignals = list(self.topicGenerators.keys())
-        self.activeSignals: Set[str] = set()
+        defaultActiveStates = settings.signalControl.defaultActiveStates["publisher"]
+        self.activeSignals: Set[str] = {signal for signal, active in defaultActiveStates.items() if active}
         
         # Estatísticas globais
         self.stats = {
@@ -413,7 +418,7 @@ class MockZeroMQController(SignalControlInterface):
         
         try:
             # Gerar dados baseado no tipo de gerador
-            if topic == "Polar_PPI":
+            if topic in ["Polar_PPI", "Unity_Alcohol", "Unity_CarInfo"]:
                 rawData = generator.generateEvent()
             elif topic == "Camera_FaceLandmarks": 
                 rawData = generator.generateFrame()
