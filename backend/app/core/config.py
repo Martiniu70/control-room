@@ -34,15 +34,17 @@ class ZeroMQConfig:
         
         # Tópicos para subscrever (todos os tópicos disponíveis)
         self.topics = [
-            "Polar_PPI",           # Dados do Polar ARM Band
-            "CardioWheel_ECG",     # ECG do CardioWheel  
-            "CardioWheel_ACC",     # Acelerómetro do CardioWheel
-            "CardioWheel_GYR",     # Giroscópio do CardioWheel
-            "BrainAcess_EEG",      # EEG do BrainAccess Halo
+            "Polar_PPI",            # Dados do Polar ARM Band
+            "CardioWheel_ECG",      # ECG do CardioWheel  
+            "CardioWheel_ACC",      # Acelerómetro do CardioWheel
+            "CardioWheel_GYR",      # Giroscópio do CardioWheel
+            "BrainAcess_EEG",       # EEG do BrainAccess Halo
             "Camera_FaceLandmarks", # Face landmarks e gaze da câmera
-            "Control",             # Sinais de controlo
-            "Timestamp",           # Timestamps do sistema
-            "Cfg"                  # Configurações dos dispositivos
+            "Unity_Alcohol",        # Nível de álcool separado
+            "Unity_CarInfo",        # Velocidade + centralidade juntos
+            "Control",              # Sinais de controlo
+            "Timestamp",            # Timestamps do sistema
+            "Cfg"                   # Configurações dos dispositivos
         ]
 
         # Tipos de dados reconhecidos por tópico
@@ -53,6 +55,8 @@ class ZeroMQConfig:
             "CardioWheel_GYR": ["gyroscope"],
             "BrainAcess_EEG": ["eegRaw"],
             "Camera_FaceLandmarks": ["faceLandmarks"],
+            "Unity_Alcohol": ["alcohol_level"],
+            "Unity_CarInfo": ["car_information"],
             "Control": ["system"],
             "Timestamp": ["system"],
             "Cfg": ["system"]
@@ -60,15 +64,17 @@ class ZeroMQConfig:
 
         # Configurações de debug e logging específicas por tópico
         self.topicLogLevels = {
-            "Polar_PPI": "INFO",        # Log normal para Polar
-            "CardioWheel_ECG": "DEBUG", # Log detalhado para ECG
-            "CardioWheel_ACC": "INFO", # Só avisos para acelerómetro
-            "CardioWheel_GYR": "WARNING", # Só avisos para giroscópio  
-            "BrainAcess_EEG": "INFO",   # Log normal para EEG
-            "Camera_FaceLandmarks": "INFO", # Log normal para câmera
-            "Control": "INFO",          # Log normal para controlo
-            "Timestamp": "WARNING",     # Só avisos para timestamps
-            "Cfg": "INFO"               # Log normal para configurações
+            "Polar_PPI": "WARNING",             # Log level para Polar
+            "CardioWheel_ECG": "WARNING",       # Log level para ECG
+            "CardioWheel_ACC": "WARNING",       # Log level para acelerómetro
+            "CardioWheel_GYR": "WARNING",       # Log level para giroscópio  
+            "BrainAcess_EEG": "WARNING",        # Log level para EEG
+            "Camera_FaceLandmarks": "WARNING",  # Log level para câmera
+            "Unity_Alcohol": "DEBUG",           # Log level para alcoolemia
+            "Unity_CarInfo": "DEBUG",           # Log level para informação do carro
+            "Control": "INFO",                  # Log level para controlo
+            "Timestamp": "WARNING",             # Log level para timestamps
+            "Cfg": "INFO"                       # Log level para configurações
         }
 
         # Configurações de socket
@@ -100,6 +106,8 @@ class ZeroMQConfig:
             "CardioWheel_GYR": {"signalType": "sensors", "dataType": "gyroscope"},
             "BrainAcess_EEG": {"signalType": "eeg", "dataType": "eegRaw"},
             "Camera_FaceLandmarks": {"signalType": "camera", "dataType": "faceLandmarks"},
+            "Unity_Alcohol": {"signalType": "unity", "dataType": "alcohol_level"},
+            "Unity_CarInfo": {"signalType": "unity", "dataType": "car_information"},
             "Control": {"signalType": "system", "dataType": "control"},
             "Timestamp": {"signalType": "system", "dataType": "timestamp"},
             "Cfg": {"signalType": "system", "dataType": "config"}
@@ -147,8 +155,20 @@ class ZeroMQConfig:
                 "timestampUnit": "seconds",
                 "frameFormat": "base64",            # Formato da imagem
                 "gazeDimensions": 2,                # dx, dy para gaze vector
-                "earRange": (0.1, 0.4),            # Range normal para Eye Aspect Ratio
+                "earRange": (0.1, 0.4),             # Range normal para Eye Aspect Ratio
                 "blinkRateRange": (10, 30)          # Range normal para blink rate (por minuto)
+            },
+            "Unity_Alcohol": {
+                "samplingRate": 1,                    # 1Hz
+                "expectedChunkSize": 1,               # 1 valor por chunk
+                "timestampIncrement": 1.0,            # 1s entre samples
+                "timestampUnit": "seconds"
+            },
+            "Unity_CarInfo": {
+                "samplingRate": 1,                    # 1Hz  
+                "expectedChunkSize": 1,               # 1 valor por chunk
+                "timestampIncrement": 1.0,            # 1s entre samples
+                "timestampUnit": "seconds"
             },
             "Control": {
                 "expectedFrequency": 0.1,           # Mensagens ocasionais - TODO averiguar utilidade
@@ -228,6 +248,23 @@ class ZeroMQConfig:
                     "blink_rate": (0, 60),          # Blinks por minuto
                 }
             },
+            "Unity_Alcohol": {
+                "requiredFields": ["ts", "labels", "data"],
+                "optionalFields": [],
+                "expectedLabels": ["alcohol_level"],
+                "valueRanges": {
+                    "alcohol_level": (0.0, 3.0),     # g/L máximo possível
+                }
+            },
+            "Unity_CarInfo": {
+                "requiredFields": ["ts", "labels", "data"], 
+                "optionalFields": [],
+                "expectedLabels": ["speed", "lane_centrality"],
+                "valueRanges": {
+                    "speed": (0, 300),                # km/h máximo teórico
+                    "lane_centrality": (0.0, 1.0),   # Percentagem normalizada
+                }
+            },
             "Control": {
                 "requiredFields": ["ts"],           # TODO averiguar campos necessários
                 "optionalFields": ["labels", "data", "*"]  # Aceitar qualquer campo por enquanto
@@ -264,43 +301,49 @@ class MockZeroMQConfig:
         
         # Frequências de publicação por tópico (Hz)
         self.topicFrequencies = {
-            "Polar_PPI": 1.0,                      # 1Hz - eventos de batimento cardíaco
-            "CardioWheel_ECG": 50.0,               # 50Hz - chunks de ECG (1000Hz real / 20 samples por chunk)
-            "CardioWheel_ACC": 10.0,               # 10Hz - chunks de acelerómetro (100Hz real / 10 samples por chunk)
-            "CardioWheel_GYR": 10.0,               # 10Hz - chunks de giroscópio (100Hz real / 10 samples por chunk)
-            "BrainAcess_EEG": 25.0,                # 25Hz - chunks de EEG (250Hz real / 10 samples por chunk)
-            "Camera_FaceLandmarks": 0.5,           # 0.5Hz - dados a cada 2s como real
-            "Control": 0.1,                        # 0.1Hz - mensagens de controlo ocasionais
-            "Timestamp": 0.2,                      # 0.2Hz - timestamps ocasionais
-            "Cfg": 0.05                            # 0.05Hz - configurações raras
+            "Polar_PPI": 1.0,                       # 1Hz - eventos de batimento cardíaco
+            "CardioWheel_ECG": 50.0,                # 50Hz - chunks de ECG (1000Hz real / 20 samples por chunk)
+            "CardioWheel_ACC": 10.0,                # 10Hz - chunks de acelerómetro (100Hz real / 10 samples por chunk)
+            "CardioWheel_GYR": 10.0,                # 10Hz - chunks de giroscópio (100Hz real / 10 samples por chunk)
+            "BrainAcess_EEG": 25.0,                 # 25Hz - chunks de EEG (250Hz real / 10 samples por chunk)
+            "Camera_FaceLandmarks": 0.5,            # 0.5Hz - dados a cada 2s como real
+            "Unity_Alcohol": 1.0,                   # 1Hz - nível álcool a cada segundo
+            "Unity_CarInfo": 1.0,                   # 1Hz - velocidade + centralidade a cada segundo
+            "Control": 0.1,                         # 0.1Hz - mensagens de controlo ocasionais
+            "Timestamp": 0.2,                       # 0.2Hz - timestamps ocasionais
+            "Cfg": 0.05                             # 0.05Hz - configurações raras
         }
         
         # Configurações de chunk por tópico (quantos samples por mensagem)
         self.topicChunkSizes = {
-            "Polar_PPI": 1,                        # 1 evento PPI por mensagem
-            "CardioWheel_ECG": 20,                 # 20 samples ECG por chunk (20ms @ 1000Hz)
-            "CardioWheel_ACC": 10,                 # 10 samples ACC por chunk (100ms @ 100Hz)
-            "CardioWheel_GYR": 10,                 # 10 samples GYR por chunk (100ms @ 100Hz)
-            "BrainAcess_EEG": 10,                  # 10 samples EEG por chunk (40ms @ 250Hz)
-            "Camera_FaceLandmarks": 1,             # 1 frame por chunk
-            "Control": 1,                          # 1 mensagem de controlo
-            "Timestamp": 1,                        # 1 timestamp
-            "Cfg": 1                               # 1 configuração
+            "Polar_PPI": 1,                         # 1 evento PPI por mensagem
+            "CardioWheel_ECG": 20,                  # 20 samples ECG por chunk (20ms @ 1000Hz)
+            "CardioWheel_ACC": 10,                  # 10 samples ACC por chunk (100ms @ 100Hz)
+            "CardioWheel_GYR": 10,                  # 10 samples GYR por chunk (100ms @ 100Hz)
+            "BrainAcess_EEG": 10,                   # 10 samples EEG por chunk (40ms @ 250Hz)
+            "Camera_FaceLandmarks": 1,              # 1 frame por chunk
+            "Unity_Alcohol": 1,                     # 1 valor por mensagem
+            "Unity_CarInfo": 1,                     # 1 valor por mensagem
+            "Control": 1,                           # 1 mensagem de controlo
+            "Timestamp": 1,                         # 1 timestamp
+            "Cfg": 1                                # 1 configuração
         }
         
         # Configurações de anomalias mock
         self.anomalyInjection = {
-            "enabled": True,                       # Ativar injeção de anomalias
-            "globalChance": 0.02,                  # 2% chance global por ciclo
-            "minInterval": 10.0,                   # Segundos mínimos entre anomalias
-            "maxAnomaliesPerMinute": 3,            # Máximo de anomalias por minuto
-            "topicChances": {                      # Chances específicas por tópico
-                "Polar_PPI": 0.05,                 # 5% chance para HR
-                "CardioWheel_ECG": 0,              # 0.005% chance para ECG
-                "CardioWheel_ACC": 0.0005,         # 0.05% chance para ACC
-                "CardioWheel_GYR": 0.0005,         # 0.05% chance para GYR
-                "BrainAcess_EEG": 0.0002,          # 0.02% chance para EEG
-                "Camera_FaceLandmarks": 0.05       # 5  % chance para câmera
+            "enabled": True,                        # Ativar injeção de anomalias
+            "globalChance": 0.02,                   # 2% chance global por ciclo
+            "minInterval": 10.0,                    # Segundos mínimos entre anomalias
+            "maxAnomaliesPerMinute": 3,             # Máximo de anomalias por minuto
+            "topicChances": {                       # Chances específicas por tópico
+                "Polar_PPI": 0.05,                  # 5% chance para HR
+                "CardioWheel_ECG": 0,               # 0.005% chance para ECG
+                "CardioWheel_ACC": 0.0005,          # 0.05% chance para ACC
+                "CardioWheel_GYR": 0.0005,          # 0.05% chance para GYR
+                "BrainAcess_EEG": 0.0002,           # 0.02% chance para EEG
+                "Camera_FaceLandmarks": 0.05,       # 5  % chance para câmera
+                "Unity_Alcohol": 0.02,              # 2% chance de anomalia álcool
+                "Unity_CarInfo": 0.03,              # 3% chance de anomalia condução
             }
         }
         
@@ -745,40 +788,31 @@ class SignalConfig:
             },
         }
                 
-        # TODO Configurações Unity
+        # Configurações Unity
         self.unityConfig = {
-            "steering": {
-                "samplingRate": 50, 
-                "bufferSize": 1500,
-                "normalRange": (-45.0, 45.0),       # Graus
-                "suddenChangeThreshold": 15.0       # Graus por segundo
+            "alcohol_level": {
+                "samplingRate": 1,                # 1Hz
+                "bufferSize": 30,                 # 30s * 1Hz = 30 valores
+                "normalRange": (0.0, 3.0),        # g/L
+                "legalLimit": 0.5,                # Limite legal
+                "dangerLimit": 0.8,               # Limite perigoso
+                "detectionThreshold": 0.1         # Mínimo detetável
             },
-            "speed": {
-                "samplingRate": 10, 
-                "bufferSize": 300,
-                "normalRange": (0, 120),            # km/h
-                "speedingThreshold": 100,           # km/h
-                "suddenChangeThreshold": 20.0       # km/h por segundo
-            },
-            "throttleBrakes": {
-                "samplingRate": 50, 
-                "bufferSize": 1500,
-                "normalRange": (0.0, 1.0),          # Percentagem 0-100%
-                "aggressiveThreshold": 0.9          # >90% = agressivo
-            },
-            "laneCentrality": {
-                "samplingRate": 10, 
-                "bufferSize": 300,
-                "normalRange": (0.3, 1.0),          # 0=fora da faixa, 1=centro
-                "dangerThreshold": 0.2,             # <20% = perigoso
-                "warningThreshold": 0.4             # <40% = aviso
-            },
-            "proximityNpcs": {
-                "samplingRate": 10, 
-                "bufferSize": 300,
-                "safeDistance": 20.0,               # Metros
-                "warningDistance": 10.0,            # Metros
-                "dangerDistance": 5.0               # Metros
+            "car_information": {
+                "samplingRate": 1,                # 1Hz
+                "bufferSize": 30,                 # 30s * 1Hz = 30 valores
+                "speed": {
+                    "normalRange": (0, 120),      # km/h
+                    "speedingThreshold": 100,     # Limite velocidade
+                    "dangerSpeedThreshold": 150,  # Velocidade perigosa
+                    "suddenChangeThreshold": 20   # km/h mudança súbita
+                },
+                "lane_centrality": {
+                    "normalRange": (0.3, 1.0),    # 0=fora, 1=centro perfeito
+                    "warningThreshold": 0.4,      # <40% = aviso
+                    "dangerThreshold": 0.2,       # <20% = perigo
+                    "stabilityThreshold": 0.1     # Variação máxima normal
+                }
             }
         }
 
@@ -952,15 +986,16 @@ class SignalConfig:
 class SignalControlConfig:
     """Configurações do sistema de controlo de sinais"""
     def __init__(self):
-
         # Cada tópico ZeroMQ mapeia diretamente para um signal type
         self.topicToSignalTypeMapping = {
-            "Polar_PPI": "hr",                    # HR/PPI do Polar
-            "CardioWheel_ECG": "ecg",             # ECG do CardioWheel
-            "CardioWheel_ACC": "accelerometer",   # Acelerómetro do CardioWheel
-            "CardioWheel_GYR": "gyroscope",       # Giroscópio do CardioWheel
-            "BrainAcess_EEG": "eegRaw",            # EEG raw do BrainAccess
-            "Camera_FaceLandmarks": "faceLandmarks"  # Face landmarks da câmera
+            "Polar_PPI": "hr",                          # HR/PPI do Polar
+            "CardioWheel_ECG": "ecg",                   # ECG do CardioWheel
+            "CardioWheel_ACC": "accelerometer",         # Acelerómetro do CardioWheel
+            "CardioWheel_GYR": "gyroscope",             # Giroscópio do CardioWheel
+            "BrainAcess_EEG": "eegRaw",                 # EEG raw do BrainAccess
+            "Camera_FaceLandmarks": "faceLandmarks",    # Face landmarks da câmera
+            "Unity_Alcohol": "alcohol_level",           # Nivel de alcoolemia do Unity
+            "Unity_CarInfo": "car_information",         # Centralização e Velocidade do carro do simulador
         }
 
         # Listas derivadas do mapeamento
@@ -969,13 +1004,13 @@ class SignalControlConfig:
 
         self.componentSignalMappings = {
             # Componentes que trabalham com tópicos ZeroMQ
-            "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"]
-            "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"]
-            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars"] 
+            "publisher": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars", "Unity_Alcohol", "Unity_CarInfo"]
+            "listener": self.zeroMQTopics.copy(),    # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars", "Unity_Alcohol", "Unity_CarInfo"]
+            "processor": self.zeroMQTopics.copy(),   # ["Polar_PPI", "CardioWheel_ECG", "CardioWheel_ACC", "CardioWheel_GYR", "BrainAcess_EEG", "Camera_FaceLandmars", "Unity_Alcohol", "Unity_CarInfo"] 
             
             # Componentes que trabalham com signal types
-            "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
-            "websocket": self.signalTypes.copy()     # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
+            "manager": self.signalTypes.copy(),      # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks", "alcohol_level", "car_information"]
+            "websocket": self.signalTypes.copy()     # ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks", "alcohol_level", "car_information"]
         }
         
         self.defaultActiveStates = {
@@ -1041,7 +1076,7 @@ class Settings:
         self.corsOrigins = [origin.strip() for origin in cors_origins.split(',')]
         
         # Logging
-        self.logLevel = os.getenv('LOG_LEVEL', 'DEBUG')
+        self.logLevel = os.getenv('LOG_LEVEL', 'INFO')
         self.testLogLevel = os.getenv('TEST_LOG_LEVEL', 'WARNING') # TODO Acho que já esta deprecated após ultimo refacto , mas tenho que averiguar melhor
         
         # Sub-configurações

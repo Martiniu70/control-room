@@ -40,6 +40,8 @@ class ZeroMQFormatter:
             "CardioWheel_GYR": self._formatCardioWheelGYR,
             "BrainAcess_EEG": self._formatBrainAccessEEG,
             "Camera_FaceLandmarks": self._formatCameraFaceLandmarks,
+            "Unity_Alcohol": self._formatUnityAlcohol,
+            "Unity_CarInfo": self._formatUnityCarInfo,
             "Control": self._formatSystemControl,
             "Timestamp": self._formatSystemTimestamp,
             "Cfg": self._formatSystemConfig
@@ -417,6 +419,82 @@ class ZeroMQFormatter:
             "data": dataArray
         }
     
+    def _formatUnityAlcohol(self, rawData: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+        """
+        Formata dados de nível de álcool do Unity.
+        
+        Input esperado:
+        {
+            "alcohol_level": 0.3
+        }
+        
+        Output ZeroMQ:
+        {
+            "ts": "timestamp",
+            "labels": ["alcohol_level"],
+            "data": [[0.3]]
+        }
+        """
+        
+        # Extrair dados
+        alcoholLevel = rawData.get("alcohol_level")
+        
+        if alcoholLevel is None:
+            raise ValueError("Alcohol level is required for Unity alcohol data")
+        
+        # Validar range usando configurações centralizadas
+        validRange = self.zmqConfig.topicValidationConfig["Unity_Alcohol"]["valueRanges"]["alcohol_level"]
+        if not (validRange[0] <= alcoholLevel <= validRange[1]):
+            raise ValueError(f"Alcohol level {alcoholLevel} fora do range válido {validRange}")
+        
+        return {
+            "ts": timestamp,
+            "labels": ["alcohol_level"],
+            "data": [[float(alcoholLevel)]]
+        }
+    
+    def _formatUnityCarInfo(self, rawData: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
+        """
+        Formata dados de informação do carro do Unity.
+        
+        Input esperado:
+        {
+            "speed": 65.0,
+            "lane_centrality": 0.8
+        }
+        
+        Output ZeroMQ:
+        {
+            "ts": "timestamp", 
+            "labels": ["speed", "lane_centrality"],
+            "data": [[65.0, 0.8]]
+        }
+        """
+        
+        # Extrair dados
+        speed = rawData.get("speed")
+        laneCentrality = rawData.get("lane_centrality")
+        
+        if speed is None or laneCentrality is None:
+            raise ValueError("Speed and lane_centrality are required for Unity car info")
+        
+        # Validar ranges usando configurações centralizadas
+        carInfoValidation = self.zmqConfig.topicValidationConfig["Unity_CarInfo"]["valueRanges"]
+        
+        speedRange = carInfoValidation["speed"]
+        if not (speedRange[0] <= speed <= speedRange[1]):
+            raise ValueError(f"Speed {speed} fora do range válido {speedRange}")
+        
+        centralityRange = carInfoValidation["lane_centrality"]
+        if not (centralityRange[0] <= laneCentrality <= centralityRange[1]):
+            raise ValueError(f"Lane centrality {laneCentrality} fora do range válido {centralityRange}")
+        
+        return {
+            "ts": timestamp,
+            "labels": ["speed", "lane_centrality"], 
+            "data": [[float(speed), float(laneCentrality)]]
+        }
+
     def _formatSystemControl(self, rawData: Dict[str, Any], timestamp: str) -> Dict[str, Any]:
         """
         Formata mensagens de controlo do sistema.

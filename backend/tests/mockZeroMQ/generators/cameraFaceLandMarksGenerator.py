@@ -635,28 +635,19 @@ class CameraFaceLandmarksGenerator:
             
             # Desenhar features faciais
             self._drawEyebrows(draw, pixelLandmarks, colors, lineWidths)
-            print("\n\n\n\n\n\n\n PASSOU  - 1 SOB  \n\n\n\n\n\n\n\n\n\n\n")
             self._drawNose(draw, pixelLandmarks, colors, lineWidths)
-            print("\n\n\n\n\n\n\n PASSOU  - 2  NARIZ  \n\n\n\n\n\n\n\n\n\n\n")
             self._drawMouth(draw, pixelLandmarks, colors, lineWidths)
-            print("\n\n\n\n\n\n\n PASSOU  - 3 BOCA \n\n\n\n\n\n\n\n\n\n\n")
             
             # Desenhar olhos (coordenados com EAR)
             self._drawEyes(draw, pixelLandmarks, ear, colors, lineWidths)
 
-            print("\n\n\n\n\n\n\n PASSOU  - 6 EYES \n\n\n\n\n\n\n\n\n\n\n")
-            
             # Adicionar pupils baseadas no gaze
             self._drawPupils(draw, pixelLandmarks, ear, colors)
 
-            print("\n\n\n\n\n\n\n PASSOU  - 7 PUPILAS \n\n\n\n\n\n\n\n\n\n\n")
-            
             # Converter para base64
             buffer = io.BytesIO()
             img.save(buffer, format='JPEG', quality=self.imageQuality)
             imgBytes = buffer.getvalue()
-
-            print("\n\n\n\n\n\n\n PASSOU  - 8 PARA BYTES \n\n\n\n\n\n\n\n\n\n\n")
             
             return base64.b64encode(imgBytes).decode('utf-8')
             
@@ -680,16 +671,13 @@ class CameraFaceLandmarksGenerator:
         
         # Usar ranges configurados para sobrancelhas
         leftBrowRange = self.landmarkRanges["leftEyebrow"]
-        print("\n\n\n\n\n\n\n PASSOU LEFT BRAW RANGE \n\n\n\n\n\n\n")
         rightBrowRange = self.landmarkRanges["rightEyebrow"]
-        print("\n\n\n\n\n\n\n PASSOU RIGHT BRAW RANGE \n\n\n\n\n\n\n")
 
         # Sobrancelha esquerda
         leftBrow = [(landmarks[i, 0], landmarks[i, 1]) for i in range(leftBrowRange[0], leftBrowRange[1] + 1)]
         if len(leftBrow) > 1:
             for i in range(len(leftBrow) - 1):
                 draw.line([leftBrow[i], leftBrow[i+1]], fill=colors["eyebrows"], width=lineWidths["eyebrows"])
-        print("\n\n\n\n\n\n\n PASSOU LEFT BROW GEN \n\n\n\n\n\n\n")
 
         # Sobrancelha direita
         rightBrow = [(landmarks[i, 0], landmarks[i, 1]) for i in range(rightBrowRange[0], rightBrowRange[1] + 1)]
@@ -697,8 +685,6 @@ class CameraFaceLandmarksGenerator:
             for i in range(len(rightBrow) - 1):
                 draw.line([rightBrow[i], rightBrow[i+1]], fill=colors["eyebrows"], width=lineWidths["eyebrows"])
 
-        print("\n\n\n\n\n\n\n PASSOU RIGHT BRAW RANGE \n\n\n\n\n\n\n")
-    
     def _drawNose(self, draw: ImageDraw.Draw, landmarks: np.ndarray, colors: Dict, lineWidths: Dict):
         """Desenha nariz"""
         

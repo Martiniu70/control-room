@@ -40,8 +40,9 @@ class WebSocketManager(SignalControlInterface):
         self.heartbeatInterval = 10.0  
         
         # Signal Control properties
-        self.availableSignals = ["hr", "ecg", "accelerometer", "gyroscope", "eegRaw", "faceLandmarks"]
-        self.activeSignals: Set[str] = set()  # Começam todos desativos por default
+        self.availableSignals = settings.signalControl.signalTypes.copy()
+        defaultActiveStates = settings.signalControl.defaultActiveStates["websocket"]
+        self.activeSignals: Set[str] = {signal for signal, active in defaultActiveStates.items() if active}
         
         # Estatísticas de WebSocket incluindo filtering
         self.stats = {

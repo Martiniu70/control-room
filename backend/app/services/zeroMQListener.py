@@ -76,8 +76,9 @@ class ZeroMQListener(SignalControlInterface):
         self.subscribedTopics: Set[str] = set()
         
         # Signal Control properties
-        self.availableSignals = self.topics.copy()
-        self.activeSignals: Set[str] = set(self.availableSignals)  # Todos ativos por default
+        self.availableSignals = settings.signalControl.zeroMQTopics.copy()
+        defaultActiveStates = settings.signalControl.defaultActiveStates["listener"]
+        self.activeSignals: Set[str] = {signal for signal, active in defaultActiveStates.items() if active}
         
         # Configurações de socket
         self.lingerTime = self.zmqConfig.lingerTime

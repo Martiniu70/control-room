@@ -17,6 +17,8 @@ from .cardioWheelGyrGenerator import cardioWheelGyrGenerator, CardioWheelGyrGene
 from .polarPpiGenerator import polarPpiGenerator, PolarPpiGenerator
 from .brainAccessEegGenerator import brainAccessEegGenerator, BrainAccessEegGenerator
 from .cameraFaceLandMarksGenerator import cameraFaceLandmarksGenerator, CameraFaceLandmarksGenerator
+from .unityAlcoholGenerator import unityAlcoholGenerator, UnityAlcoholGenerator
+from .unityCarInfoGenerator import unityCarInfoGenerator, UnityCarInfoGenerator
 
 __all__ = [
     "cardioWheelEcgGenerator", "CardioWheelEcgGenerator",
@@ -24,5 +26,7 @@ __all__ = [
     "cardioWheelGyrGenerator", "CardioWheelGyrGenerator",
     "polarPpiGenerator", "PolarPpiGenerator",
     "brainAccessEegGenerator", "BrainAccessEegGenerator",
-    "cameraFaceLandmarksGenerator", "CameraFaceLandmarksGenerator"
+    "cameraFaceLandmarksGenerator", "CameraFaceLandmarksGenerator",
+    "unityAlcoholGenerator", "UnityAlcoholGenerator",
+    "unityCarInfoGenerator", "UnityCarInfoGenerator"
 ]

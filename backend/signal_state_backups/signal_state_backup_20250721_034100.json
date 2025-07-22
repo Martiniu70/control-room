@@ -1,0 +1,322 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "timestamp": "2025-07-21T03:39:34.796164",
+    "saveOperation": 1
+  },
+  "signalControl": {
+    "globalState": {
+      "timestamp": "2025-07-21T03:39:34.792164",
+      "components": {
+        "manager": {
+          "state": "running",
+          "signals": {
+            "hr": "active",
+            "ecg": "active",
+            "accelerometer": "active",
+            "gyroscope": "active",
+            "eegRaw": "active",
+            "faceLandmarks": "active",
+            "alcohol_level": "active",
+            "car_information": "active"
+          },
+          "summary": {
+            "componentState": "running",
+            "totalSignals": 8,
+            "activeSignals": 8,
+            "inactiveSignals": 0,
+            "availableSignals": [
+              "hr",
+              "ecg",
+              "accelerometer",
+              "gyroscope",
+              "eegRaw",
+              "faceLandmarks",
+              "alcohol_level",
+              "car_information"
+            ],
+            "activeSignalsList": [
+              "hr",
+              "ecg",
+              "accelerometer",
+              "eegRaw",
+              "gyroscope",
+              "alcohol_level",
+              "car_information",
+              "faceLandmarks"
+            ],
+            "inactiveSignalsList": [],
+            "filtering": {
+              "totalFiltered": 0,
+              "filteringRate": 0.0
+            },
+            "lastUpdate": "2025-07-21T03:39:34.792164"
+          }
+        },
+        "processor": {
+          "state": "running",
+          "signals": {
+            "Polar_PPI": "active",
+            "CardioWheel_ECG": "active",
+            "CardioWheel_ACC": "active",
+            "CardioWheel_GYR": "active",
+            "BrainAcess_EEG": "active",
+            "Camera_FaceLandmarks": "active",
+            "Unity_Alcohol": "active",
+            "Unity_CarInfo": "active"
+          },
+          "summary": {
+            "componentState": "running",
+            "totalSignals": 8,
+            "activeSignals": 8,
+            "inactiveSignals": 0,
+            "availableSignals": [
+              "Polar_PPI",
+              "CardioWheel_ECG",
+              "CardioWheel_ACC",
+              "CardioWheel_GYR",
+              "BrainAcess_EEG",
+              "Camera_FaceLandmarks",
+              "Unity_Alcohol",
+              "Unity_CarInfo"
+            ],
+            "activeSignalsList": [
+              "CardioWheel_ECG",
+              "BrainAcess_EEG",
+              "CardioWheel_GYR",
+              "Unity_CarInfo",
+              "CardioWheel_ACC",
+              "Polar_PPI",
+              "Camera_FaceLandmarks",
+              "Unity_Alcohol"
+            ],
+            "inactiveSignalsList": [],
+            "filtering": {
+              "totalFiltered": 0,
+              "filteringRate": 0.0
+            },
+            "lastUpdate": "2025-07-21T03:39:34.792164"
+          }
+        },
+        "listener": {
+          "state": "running",
+          "signals": {
+            "Polar_PPI": "active",
+            "CardioWheel_ECG": "active",
+            "CardioWheel_ACC": "active",
+            "CardioWheel_GYR": "active",
+            "BrainAcess_EEG": "active",
+            "Camera_FaceLandmarks": "active",
+            "Unity_Alcohol": "active",
+            "Unity_CarInfo": "active"
+          },
+          "summary": {
+            "componentState": "running",
+            "totalSignals": 8,
+            "activeSignals": 8,
+            "inactiveSignals": 0,
+            "availableSignals": [
+              "Polar_PPI",
+              "CardioWheel_ECG",
+              "CardioWheel_ACC",
+              "CardioWheel_GYR",
+              "BrainAcess_EEG",
+              "Camera_FaceLandmarks",
+              "Unity_Alcohol",
+              "Unity_CarInfo"
+            ],
+            "activeSignalsList": [
+              "CardioWheel_ECG",
+              "BrainAcess_EEG",
+              "CardioWheel_GYR",
+              "Unity_CarInfo",
+              "CardioWheel_ACC",
+              "Polar_PPI",
+              "Camera_FaceLandmarks",
+              "Unity_Alcohol"
+            ],
+            "inactiveSignalsList": [],
+            "lastUpdate": "2025-07-21T03:39:34.792164"
+          }
+        },
+        "websocket": {
+          "state": "running",
+          "signals": {
+            "hr": "inactive",
+            "ecg": "inactive",
+            "accelerometer": "inactive",
+            "gyroscope": "inactive",
+            "eegRaw": "inactive",
+            "faceLandmarks": "inactive",
+            "alcohol_level": "inactive",
+            "car_information": "inactive"
+          },
+          "summary": {
+            "componentState": "running",
+            "totalSignals": 8,
+            "activeSignals": 0,
+            "inactiveSignals": 8,
+            "availableSignals": [
+              "hr",
+              "ecg",
+              "accelerometer",
+              "gyroscope",
+              "eegRaw",
+              "faceLandmarks",
+              "alcohol_level",
+              "car_information"
+            ],
+            "activeSignalsList": [],
+            "inactiveSignalsList": [
+              "hr",
+              "ecg",
+              "accelerometer",
+              "gyroscope",
+              "eegRaw",
+              "faceLandmarks",
+              "alcohol_level",
+              "car_information"
+            ],
+            "filtering": {
+              "messagesFiltered": 833,
+              "anomaliesFiltered": 14,
+              "filteringRate": 1.0
+            },
+            "connections": {
+              "activeConnections": 0,
+              "maxConnections": 10,
+              "connectionEvents": 0
+            },
+            "lastUpdate": "2025-07-21T03:39:34.792164"
+          }
+        },
+        "publisher": {
+          "state": "running",
+          "signals": {
+            "Polar_PPI": "inactive",
+            "CardioWheel_ECG": "inactive",
+            "CardioWheel_ACC": "inactive",
+            "CardioWheel_GYR": "inactive",
+            "BrainAcess_EEG": "inactive",
+            "Camera_FaceLandmarks": "inactive",
+            "Unity_Alcohol": "active",
+            "Unity_CarInfo": "inactive"
+          },
+          "summary": {
+            "componentState": "running",
+            "totalSignals": 8,
+            "activeSignals": 1,
+            "inactiveSignals": 7,
+            "availableSignals": [
+              "Polar_PPI",
+              "CardioWheel_ECG",
+              "CardioWheel_ACC",
+              "CardioWheel_GYR",
+              "BrainAcess_EEG",
+              "Camera_FaceLandmarks",
+              "Unity_Alcohol",
+              "Unity_CarInfo"
+            ],
+            "activeSignalsList": [
+              "Unity_Alcohol"
+            ],
+            "inactiveSignalsList": [
+              "Polar_PPI",
+              "CardioWheel_ECG",
+              "CardioWheel_ACC",
+              "CardioWheel_GYR",
+              "BrainAcess_EEG",
+              "Camera_FaceLandmarks",
+              "Unity_CarInfo"
+            ],
+            "lastUpdate": "2025-07-21T03:39:34.792164"
+          }
+        }
+      },
+      "globalSummary": {
+        "totalComponents": 5,
+        "totalSignals": 40,
+        "activeSignals": 25,
+        "componentStates": {
+          "manager": "running",
+          "processor": "running",
+          "listener": "running",
+          "websocket": "running",
+          "publisher": "running"
+        }
+      },
+      "stats": {
+        "operationsExecuted": 1,
+        "batchOperationsExecuted": 0,
+        "lastOperation": {
+          "type": "enable_signal",
+          "signal": "Unity_Alcohol",
+          "component": "publisher",
+          "timestamp": "2025-07-21T03:39:34.792164",
+          "results": {
+            "publisher": true
+          }
+        },
+        "totalComponents": 5,
+        "errors": 0,
+        "startTime": "2025-07-21T03:39:17.007246"
+      }
+    },
+    "config": {
+      "persistState": true,
+      "allowEmptyActiveSignals": false,
+      "componentMappings": {
+        "publisher": [
+          "Polar_PPI",
+          "CardioWheel_ECG",
+          "CardioWheel_ACC",
+          "CardioWheel_GYR",
+          "BrainAcess_EEG",
+          "Camera_FaceLandmarks",
+          "Unity_Alcohol",
+          "Unity_CarInfo"
+        ],
+        "listener": [
+          "Polar_PPI",
+          "CardioWheel_ECG",
+          "CardioWheel_ACC",
+          "CardioWheel_GYR",
+          "BrainAcess_EEG",
+          "Camera_FaceLandmarks",
+          "Unity_Alcohol",
+          "Unity_CarInfo"
+        ],
+        "processor": [
+          "Polar_PPI",
+          "CardioWheel_ECG",
+          "CardioWheel_ACC",
+          "CardioWheel_GYR",
+          "BrainAcess_EEG",
+          "Camera_FaceLandmarks",
+          "Unity_Alcohol",
+          "Unity_CarInfo"
+        ],
+        "manager": [
+          "hr",
+          "ecg",
+          "accelerometer",
+          "gyroscope",
+          "eegRaw",
+          "faceLandmarks",
+          "alcohol_level",
+          "car_information"
+        ],
+        "websocket": [
+          "hr",
+          "ecg",
+          "accelerometer",
+          "gyroscope",
+          "eegRaw",
+          "faceLandmarks",
+          "alcohol_level",
+          "car_information"
+        ]
+      }
+    }
+  }
+}
