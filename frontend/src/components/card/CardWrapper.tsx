@@ -1,42 +1,60 @@
 // components/CardWrapper.tsx
-import React, { useState, useCallback, Suspense } from 'react'; // Importar Suspense
+import React, { useState, useCallback, Suspense, useEffect } from 'react';
 
-// Interface que define as propriedades que os componentes de conteúdo de visualização devem aceitar
+/**
+ * @file CardWrapper.tsx
+ * @description This component serves as a flexible container for various data visualization cards.
+ * It provides a consistent header, loading states, and the ability to cycle through
+ * different visualization components for the same data.
+ */
+
+/**
+ * Interface defining the properties that visualization content components must accept.
+ */
 export interface VisualizationContentProps {
-  cardWidth?: number; // Tornar opcional, pois CardWrapper irá injetar
-  cardHeight?: number; // Tornar opcional, pois CardWrapper irá injetar
-  // Adicione aqui quaisquer outras props comuns que todos os componentes de visualização possam precisar
-  data: any; // Dados genéricos, o componente de visualização específico saberá o tipo
-  unit?: string; // Unidade, se aplicável
-  color?: string; // Cor, se aplicável
-  selectedChannelKey?: string; // Para EegRawCard, por exemplo
-  onRotationUpdate?: (x: number, y: number, z: number) => void; // Para GyroCard, por exemplo
+  cardWidth?: number;  // Optional: Injected by CardWrapper for responsive sizing.
+  cardHeight?: number; // Optional: Injected by CardWrapper for responsive sizing.
+  data: any;           // Generic data; the specific visualization component will know its type.
+  unit?: string;       // Optional: Unit of measurement, if applicable.
+  color?: string;      // Optional: Color for visualization, if applicable.
+  selectedChannelKey?: string; // Optional: For components like EegRawCard, to select a channel.
+  onRotationUpdate?: (x: number, y: number, z: number) => void; // Optional: For components like GyroCard, to handle rotation.
 }
 
-// NOVO: Interface para a configuração de uma visualização
+/**
+ * Interface for configuring a specific visualization option within a card.
+ */
 interface VisualizationConfig {
-  label: string;
-  component: React.ComponentType<any>; // Componente React da visualização
+  label: string;                     // Label for the visualization (e.g., "Gráfico", "Mapa Cerebral").
+  component: React.ComponentType<any>; // The React component to render for this visualization.
 }
 
+/**
+ * Interface defining the props for the CardWrapper component.
+ */
 interface CardWrapperProps {
-  title: string;
-  width?: number;
-  height?: number;
-  isLoading?: boolean;
-  noDataMessage?: string;
-  detailsContent?: React.ReactNode; // Slot para os detalhes/valores
-  onClose?: () => void; // Callback para fechar o card
-  headerContent?: React.ReactNode; // ADICIONADO NOVAMENTE: Para conteúdo customizado no cabeçalho (como o botão de ciclo)
-  
-  // NOVO: Array de visualizações que este card pode exibir
-  visualizations: VisualizationConfig[];
-  // NOVO: Dados específicos do card, que serão passados para a visualização ativa
-  cardData: any;
-  // NOVO: Props adicionais que podem ser passadas para as visualizações (ex: unit, color, selectedChannelKey)
-  visualizationProps?: { [key: string]: any };
+  title: string;                               // The title displayed in the card header.
+  width?: number;                              // Optional: Width of the card container.
+  height?: number;                             // Optional: Height of the card container.
+  isLoading?: boolean;                         // Optional: Flag to show a loading indicator.
+  noDataMessage?: string;                      // Optional: Message to display when no data is available.
+  detailsContent?: React.ReactNode;            // Optional: Slot for additional details or summary content below the header.
+  onClose?: () => void;                        // Optional: Callback function when the close button is clicked.
+  headerContent?: React.ReactNode;             // Optional: Custom content to be rendered in the header (e.g., EEG channel buttons).
+  visualizations?: VisualizationConfig[];      // Optional: Array of available visualization configurations.
+  cardData?: any;                              // Optional: Raw data for the card, passed to the active visualization.
+  visualizationProps?: { [key: string]: any }; // Optional: Additional props to pass directly to the visualization component.
+  activeVisualizationIndex?: number;           // NOVO: Índice da visualização ativa para persistência
+  onVisualizationChange?: (newIndex: number) => void; // NOVO: Callback para notificar a mudança de visualização
 }
 
+/**
+ * CardWrapper functional component.
+ * Acts as a generic container and manager for different data visualization cards.
+ * It handles card sizing, loading states, and cycling through multiple visualization types.
+ * @param {CardWrapperProps} props - The properties passed to the component.
+ * @returns {JSX.Element} The wrapped card JSX.
+ */
 const CardWrapper: React.FC<CardWrapperProps> = ({
   title,
   width = 300,
@@ -45,71 +63,68 @@ const CardWrapper: React.FC<CardWrapperProps> = ({
   noDataMessage = "A aguardar dados...",
   detailsContent,
   onClose,
-  headerContent, // Recebe o conteúdo customizado para o cabeçalho
-  visualizations, // Recebe o array de visualizações
-  cardData, // Recebe os dados brutos do card
-  visualizationProps = {}, // Recebe props adicionais para as visualizações
+  headerContent,
+  visualizations = [], // Default to an empty array if no visualizations are provided.
+  cardData,
+  visualizationProps = {}, // Default to an empty object if no additional props are provided.
+  activeVisualizationIndex = 0, // NOVO: Usa a prop para o índice ativo, padrão 0
+  onVisualizationChange, // NOVO: Recebe o callback
 }) => {
-  // Alturas fixas para o cabeçalho e a área de detalhes
-  const HEADER_HEIGHT = 40; // Altura do cabeçalho
-  const DETAILS_HEIGHT = 60; // Altura da área de detalhes
+  // Determine the active visualization component based on the current index from props.
+  const ActiveVisualization = visualizations[activeVisualizationIndex]?.component;
 
-  // Altura da área de visualização calculada dinamicamente
-  const visualizationHeight = height - HEADER_HEIGHT - DETAILS_HEIGHT;
-
-  // Estado para controlar a visualização ativa
-  const [currentVisualizationIndex, setCurrentVisualizationIndex] = useState(0);
-
-  // Função para alternar para a próxima visualização
-  const handleToggleVisualization = useCallback(() => {
-    setCurrentVisualizationIndex(prevIndex =>
-      (prevIndex + 1) % visualizations.length
-    );
-  }, [visualizations.length]);
-
-  // A visualização ativa
-  const ActiveVisualization = visualizations[currentVisualizationIndex]?.component;
-  const activeVisualizationLabel = visualizations[currentVisualizationIndex]?.label;
-
-  // As novas propriedades a serem passadas para o componente de visualização ativo
-  const newVisualizationProps: VisualizationContentProps = {
-    cardWidth: width,
-    cardHeight: visualizationHeight,
-    data: cardData, // Passa os dados brutos
-    ...visualizationProps, // Passa quaisquer props adicionais
+  // Combine default and custom properties for the visualization component.
+  const newVisualizationProps = {
+    ...visualizationProps,
+    data: cardData,
+    cardWidth: width - 20, // Adjust width for internal padding.
+    cardHeight: height - (detailsContent ? 100 : 60), // Adjust height for header and optional details content.
   };
 
-  // Botão para alternar a visualização (renderizado apenas se houver mais de uma)
-  const toggleVisualizationButton = visualizations.length > 1 && (
-    <button
-      onClick={handleToggleVisualization}
-      className="ml-2 px-3 py-1 bg-purple-500 text-white rounded-md text-sm hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-colors duration-200"
-      aria-label="Alternar visualização"
-      disabled={isLoading} // Desabilita se estiver a carregar
-    >
-      {`Ver ${visualizations[(currentVisualizationIndex + 1) % visualizations.length]?.label || ''}`}
-    </button>
-  );
+  /**
+   * Callback function to cycle to the next available visualization.
+   * It loops back to the first visualization after reaching the last one.
+   * NOVO: Agora chama o callback onVisualizationChange para atualizar o estado pai.
+   */
+  const cycleVisualization = useCallback(() => {
+    if (onVisualizationChange) {
+      const nextIndex = (activeVisualizationIndex + 1) % visualizations.length;
+      onVisualizationChange(nextIndex);
+    }
+  }, [activeVisualizationIndex, visualizations.length, onVisualizationChange]);
+
+  // Calculate dynamic height for the visualization area based on presence of details content.
+  const visualizationHeight = detailsContent ? height - 100 : height - 60; // 60px for header, 100px if details are present.
 
   return (
     <div
-      className="bg-white rounded-lg shadow-md flex flex-col overflow-hidden"
+      className="bg-white rounded-xl shadow-lg flex flex-col overflow-hidden transform transition-all duration-300 ease-in-out hover:scale-[1.01]"
       style={{ width: width, height: height }}
     >
-      {/* Header Section */}
-      <div
-        className="flex justify-between items-center px-4 py-2 border-b border-gray-200"
-        style={{ height: HEADER_HEIGHT }}
-      >
-        <h2 className="text-md font-semibold text-gray-800 truncate">{title}</h2>
-        <div className="flex items-center"> {/* Flex container para o botão de ciclo e o botão de fechar */}
-          {headerContent && <div className="ml-auto">{headerContent}</div>} {/* Renderiza o conteúdo customizado */}
-          {toggleVisualizationButton} {/* Renderiza o botão de alternar visualização */}
+      {/* Card Header */}
+      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-t-xl shadow-md">
+        <h2 className="text-lg font-semibold truncate">{title}</h2>
+        <div className="flex items-center space-x-2">
+          {/* Visualization cycle button (only shown if more than one visualization is available) */}
+          {visualizations.length > 1 && (
+            <button
+              onClick={cycleVisualization}
+              className="no-drag bg-white/20 hover:bg-white/30 text-white text-xs font-medium px-3 py-1 rounded-full transition-colors duration-200"
+              title="Alternar visualização"
+            >
+              {visualizations[activeVisualizationIndex]?.label || "Visualização"}
+            </button>
+          )}
+
+          {/* Slot for custom header content (e.g., EEG channel selection buttons) */}
+          {headerContent}
+
+          {/* Close button for the card */}
           {onClose && (
             <button
               onClick={onClose}
-              className="ml-2 text-gray-500 hover:text-gray-700 focus:outline-none"
-              aria-label="Fechar card"
+              className="no-drag text-white hover:text-red-300 transition-colors duration-200 p-1 rounded-full hover:bg-white/20"
+              aria-label="Fechar cartão"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -128,32 +143,29 @@ const CardWrapper: React.FC<CardWrapperProps> = ({
         </div>
       </div>
 
+      {/* Details Area (conditionally rendered if detailsContent is provided) */}
+      {detailsContent && (
+        <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-center min-h-[60px]">
+          {detailsContent}
+        </div>
+      )}
+
       {/* Visualization Area */}
       <div
-        className="flex-1 flex items-center justify-center relative overflow-hidden"
-        style={{ height: visualizationHeight }} // Altura dinâmica para a visualização
+        className="flex-1 flex items-center justify-center relative overflow-hidden bg-white"
+        style={{ height: visualizationHeight }} // Dynamic height for the visualization.
       >
         {isLoading ? (
+          // Loading message when data is being fetched.
           <div className="text-center text-gray-500 p-4">
             <p className="text-sm">A carregar...</p>
           </div>
         ) : (
+          // Suspense boundary for lazy-loaded visualization components.
           <Suspense fallback={<div className="text-center text-gray-500 p-4">A carregar visualização...</div>}>
-            {/* Renderiza o componente de visualização ativo e passa as props */}
+            {/* Render the active visualization component and pass its properties. */}
             {ActiveVisualization && <ActiveVisualization {...newVisualizationProps} />}
           </Suspense>
-        )}
-      </div>
-
-      {/* Details/Values Area */}
-      <div
-        className="p-2 border-t border-gray-200 flex items-center justify-center bg-gray-50"
-        style={{ height: DETAILS_HEIGHT }} // Altura fixa para os detalhes
-      >
-        {detailsContent ? (
-          detailsContent
-        ) : (
-          <p className="text-xs text-gray-500">Sem detalhes disponíveis.</p>
         )}
       </div>
     </div>

@@ -1,46 +1,80 @@
 // src/components/HeartRateCard.tsx
 import React from "react";
-import CardWrapper from '../CardWrapper'; // Importar o CardWrapper
-import { cardConfigs } from '../../../config/cardConfig'; // Importar cardConfigs
+import CardWrapper from '../CardWrapper';
+import { cardConfigs } from '../../../config/cardConfig';
 
-// Interface para um ponto de dados de gráfico (reutilizado do ChartCardContent)
+/**
+ * @file HeartRateCard.tsx
+ * @description Wrapper component for displaying Heart Rate data.
+ * This component uses `CardWrapper` to provide a consistent card layout
+ * and passes heart rate-specific data and visualization configurations
+ * to its content components.
+ */
+
+/**
+ * Interface for a single data point in the heart rate chart.
+ */
 interface Point {
-  x: number;
-  value: number;
+  x: number;     // Time in seconds.
+  value: number; // Heart rate value.
 }
 
-// Componente Wrapper para Heart Rate
+/**
+ * Interface defining the props for the HeartRateCard component.
+ * NOVO: Adicionadas activeVisualizationIndex e onVisualizationChange.
+ */
 interface HeartRateCardProps {
-    title: string;
-    data: Point[];
-    width?: number;
-    height?: number;
-    unit?: string;
-    color?: string; // Cor específica para o HR
-    onClose?: () => void; // Adicionado para passar para o CardWrapper
+    title: string;       // Title of the card.
+    data: Point[];       // Heart rate data to display.
+    width?: number;      // Optional width of the card.
+    height?: number;     // Optional height of the card.
+    unit?: string;       // Optional unit for heart rate (defaults to bpm).
+    color?: string;      // Optional color for the heart rate visualization.
+    onClose?: () => void; // Callback function to close the card.
+    activeVisualizationIndex?: number; // NOVO: Índice da visualização ativa.
+    onVisualizationChange?: (newIndex: number) => void; // NOVO: Callback para mudança de visualização.
 }
 
+/**
+ * HeartRateCard functional component.
+ * Renders a heart rate data card using `CardWrapper` and its configured visualizations.
+ * @param {HeartRateCardProps} props - The properties passed to the component.
+ * @returns {JSX.Element} The heart rate card JSX.
+ */
 const HeartRateCard: React.FC<HeartRateCardProps> = ({
     title,
     data,
-    color = "#8884d8", // Cor padrão para HR
+    color = "#8884d8", // Default color for HR.
     width,
     height,
-    unit = "bpm",
+    unit = "bpm",    // Default unit for heart rate.
     onClose,
+    activeVisualizationIndex, // NOVO: Desestruturado da props
+    onVisualizationChange,    // NOVO: Desestruturado da props
 }) => {
+    // Get the latest heart rate value.
     const currentValue = data[data.length - 1]?.value;
+    // Calculate the average heart rate value.
     const avgValue = data.length > 0 ?
       (data.reduce((sum, d) => sum + d.value, 0) / data.length) : 0;
 
+    /**
+     * Helper function to format numeric values with appropriate precision based on the unit.
+     * @param value The number to format.
+     * @param currentUnit The unit of the value.
+     * @returns {string} The formatted string.
+     */
     const getDisplayPrecision = (value: number, currentUnit: string) => {
         if(currentUnit === "bpm" || currentUnit === "deg" || currentUnit === "km/h"){
-          return value.toFixed(0);
+          return value.toFixed(0); // No decimal places for these units.
         }
-        return value.toFixed(2);
+        return value.toFixed(2); // Two decimal places for others.
     }
 
-    // Conteúdo para a nova área de detalhes
+    /**
+     * Content to be displayed in the details area of the CardWrapper.
+     * Shows the current and average heart rate.
+     */
     const detailsContent = (
         <div className="flex justify-between w-full text-sm text-gray-700">
             <span className="font-semibold" style={{ color }}>
@@ -52,28 +86,30 @@ const HeartRateCard: React.FC<HeartRateCardProps> = ({
         </div>
     );
 
-    // O HeartRateCard não tem botões de controlo específicos no cabeçalho (como o EEG),
-    // então customHeaderContent pode ser undefined.
+    // The `HeartRateCard` does not have specific control buttons in the header (like EEG),
+    // so `customHeaderContent` can be undefined.
 
     return (
         <CardWrapper
             title={title}
             width={width}
             height={height}
-            isLoading={!data || data.length === 0}
-            noDataMessage="A aguardar dados..."
-            detailsContent={detailsContent} // Passa o conteúdo dos detalhes
-            onClose={onClose} // Passa a função de fechar
-            // headerContent é undefined, então não é passado explicitamente
-            
-            // Passa o array de visualizações do cardConfig para 'hr'
-            visualizations={cardConfigs['hr'].visualizations} 
-            cardData={data} // Passa os dados brutos do gráfico
-            // Passa props específicas para as visualizações (color, unit)
+            isLoading={!data || data.length === 0} // Card is loading if data is empty or null.
+            noDataMessage="A aguardar dados..." // Message displayed when no data.
+            detailsContent={detailsContent} // Pass the details content.
+            onClose={onClose} // Pass the close function to CardWrapper.
+            // `headerContent` is undefined, so it's not explicitly passed.
+
+            // Pass the array of visualizations defined in `cardConfigs` for 'hr'.
+            visualizations={cardConfigs['hr'].visualizations}
+            cardData={data} // Pass the raw chart data to the visualization component.
+            // Pass specific props (color, unit) to the visualization.
             visualizationProps={{ color, unit }}
+            activeVisualizationIndex={activeVisualizationIndex} // NOVO: Passa o índice ativo
+            onVisualizationChange={onVisualizationChange}       // NOVO: Passa o callback de mudança
         >
-            {/* O CardWrapper agora renderiza o componente de visualização ativo. */}
-            {/* Não há children direto aqui, pois as visualizações são gerenciadas pelo CardWrapper. */}
+            {/* The CardWrapper now renders the active visualization component. */}
+            {/* No direct children are rendered here, as visualizations are managed by CardWrapper. */}
         </CardWrapper>
     );
 };

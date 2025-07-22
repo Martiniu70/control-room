@@ -1,204 +1,225 @@
 // src/components/card/gyroscope/GyroscopeCardContent.tsx
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import { VisualizationContentProps } from '../CardWrapper'; // Importar a interface
+import { VisualizationContentProps } from '../CardWrapper';
 
-// Define a interface para os dados do giroscópio
+/**
+ * @file GyroscopeCardContent.tsx
+ * @description This component renders a 3D cube visualization for Gyroscope data.
+ * The cube rotates based on the incoming gyroscope values, providing a visual
+ * representation of angular velocity. It also includes optional mouse interaction
+ * for manual rotation.
+ */
+
+/**
+ * Interface for Gyroscope data.
+ */
 interface GyroscopeData {
-  x: number[];
-  y: number[];
-  z: number[];
+  x: number[]; // Array of X-axis rotation values.
+  y: number[]; // Array of Y-axis rotation values.
+  z: number[]; // Array of Z-axis rotation values.
 }
 
-// Define as propriedades do componente GyroscopeContent
+/**
+ * Interface defining the props for the GyroscopeContent component,
+ * extending common visualization properties.
+ */
 interface GyroscopeContentProps extends VisualizationContentProps {
-  data: GyroscopeData | null; // Data pode ser null aqui, o componente interno deve lidar
-  // cardWidth e cardHeight já vêm de VisualizationContentProps
-  // Callback para enviar os valores de rotação para o componente pai
-  onRotationUpdate: (x: number, y: number, z: number) => void;
+  data: GyroscopeData | null; // Gyroscope data (can be null).
+  // cardWidth and cardHeight are inherited from VisualizationContentProps.
+  onRotationUpdate: (x: number, y: number, z: number) => void; // Callback to send rotation values to parent.
 }
 
+/**
+ * GyroscopeCardContent functional component.
+ * Renders a 3D cube that rotates based on gyroscope data and optional mouse input.
+ * @param {GyroscopeContentProps} props - The properties passed to the component.
+ * @returns {JSX.Element} The gyroscope 3D cube visualization JSX.
+ */
 const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({
   data,
-  cardWidth = 300, // Fornecer um valor padrão
-  cardHeight = 100, // Fornecer um valor padrão
+  cardWidth = 300,  // Default width if not provided.
+  cardHeight = 100, // Default height if not provided.
   onRotationUpdate
 }) => {
-  // Referência para o elemento canvas onde a cena 3D será renderizada
+  // Ref for the DOM element where the 3D scene will be rendered.
   const mountRef = useRef<HTMLDivElement>(null);
-  // Refs para armazenar as instâncias do Three.js que devem persistir
+  // Refs to store Three.js instances that need to persist across re-renders.
   const objectGroupRef = useRef<THREE.Group | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null); // Inicializado como null
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
-  // Ref para armazenar a versão mais recente dos dados do giroscópio
+  // Ref to store the latest gyroscope data for use in the animation loop.
   const latestGyroDataRef = useRef<GyroscopeData | null>(null);
 
-  // Estados para controlar a rotação da esfera com o mouse (opcional, pode ser removido se apenas dados do giroscópio forem usados)
+  // States to control mouse-based rotation of the sphere (optional, can be removed if only gyroscope data is used).
   const [isDragging, setIsDragging] = useState(false);
   const [previousMousePosition, setPreviousMousePosition] = useState({ x: 0, y: 0 });
 
-  // Este useEffect atualiza o ref com os dados mais recentes do giroscópio.
-  // Ele é executado sempre que a prop 'data' muda.
+  /**
+   * Effect hook to update the `latestGyroDataRef` whenever the `data` prop changes.
+   * This ensures the animation loop always has access to the most recent gyroscope data.
+   */
   useEffect(() => {
     latestGyroDataRef.current = data;
-  }, [data]); // Dependência: 'data'
+  }, [data]); // Dependency: `data` prop.
 
-  // Este useEffect será executado uma vez para a configuração inicial
-  // e sempre que a largura ou altura do card mudarem.
+  /**
+   * Effect hook for initial setup of the Three.js scene and renderer,
+   * and for handling updates when `cardWidth` or `cardHeight` change.
+   */
   useEffect(() => {
     if (!mountRef.current) return;
 
-    // 1. Configuração da Cena (inicializa apenas uma vez)
+    // 1. Scene Setup (initialized only once)
     if (!sceneRef.current) {
       sceneRef.current = new THREE.Scene();
-      sceneRef.current.background = new THREE.Color(0xf0f0f0); // Cor de fundo cinza claro
+      sceneRef.current.background = new THREE.Color(0xf0f0f0); // Light gray background.
     }
     const scene = sceneRef.current;
 
-    // 2. Configuração da Câmera (inicializa apenas uma vez, atualiza em redimensionamento)
+    // 2. Camera Setup (initialized only once, updated on resize)
     if (!cameraRef.current) {
       cameraRef.current = new THREE.PerspectiveCamera(75, cardWidth / cardHeight, 0.1, 1000);
       cameraRef.current.position.z = 2;
     }
     const camera = cameraRef.current;
-    camera.aspect = cardWidth / cardHeight; // Atualiza o aspect ratio da câmera
-    camera.updateProjectionMatrix(); // Recalcula a matriz de projeção da câmera
+    camera.aspect = cardWidth / cardHeight; // Update camera aspect ratio.
+    camera.updateProjectionMatrix(); // Recalculate camera projection matrix.
 
-    // 3. Configuração do Renderizador (inicializa apenas uma vez, atualiza em redimensionamento)
-    const renderWidth = cardWidth - 10; // Pequena margem
-    const renderHeight = cardHeight - 10; // Pequena margem
+    // 3. Renderer Setup (initialized only once, updated on resize)
+    const renderWidth = cardWidth - 10; // Small margin for rendering area.
+    const renderHeight = cardHeight - 10; // Small margin for rendering area.
 
     if (!rendererRef.current) {
       rendererRef.current = new THREE.WebGLRenderer({ antialias: true });
-      mountRef.current.innerHTML = ''; // Limpa qualquer canvas anterior para evitar duplicatas
+      mountRef.current.innerHTML = ''; // Clear any previous canvas to avoid duplicates.
       mountRef.current.appendChild(rendererRef.current.domElement);
     }
     const renderer = rendererRef.current;
-    renderer.setSize(renderWidth, renderHeight); // Define o tamanho do renderizador
-    renderer.setPixelRatio(window.devicePixelRatio); // Define a proporção de pixels para alta qualidade
+    renderer.setSize(renderWidth, renderHeight); // Set renderer size.
+    renderer.setPixelRatio(window.devicePixelRatio); // Set pixel ratio for high quality.
 
-    // 4. Criação do Cubo 3D (cria apenas uma vez)
+    // 4. 3D Cube Creation (created only once)
     if (!objectGroupRef.current) {
-      const boxSize = 1.0; // Tamanho do cubo
-      const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize); // Geometria do cubo
+      const boxSize = 1.0; // Size of the cube.
+      const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize); // Cube geometry.
 
-      // Materiais para as faces
+      // Materials for the cube faces.
       const translucentMaterial = new THREE.MeshBasicMaterial({
-        color: 0x007bff, // Azul vibrante para faces normais
+        color: 0x007bff, // Vibrant blue for normal faces.
         transparent: true,
         opacity: 0.3,
-        depthWrite: false, // Não escreve no buffer de profundidade
+        depthWrite: false, // Do not write to depth buffer for translucency.
       });
 
       const solidFrontMaterial = new THREE.MeshBasicMaterial({
-        color: 0x0000ff, // Azul sólido para a face frontal
-        transparent: false, // Opaque
-        side: THREE.DoubleSide, // Renderiza ambos os lados
+        color: 0x0000ff, // Solid blue for the front face.
+        transparent: false,
+        side: THREE.DoubleSide, // Render both sides.
       });
 
       const solidBackMaterial = new THREE.MeshBasicMaterial({
-        color: 0xff0000, // Vermelho sólido para a face traseira
-        transparent: false, // Opaque
-        side: THREE.DoubleSide, // Renderiza ambos os lados
+        color: 0xff0000, // Solid red for the back face.
+        transparent: false,
+        side: THREE.DoubleSide, // Render both sides.
       });
 
-      // Cria uma array de materiais para o cubo
-      // Ordem: [+X, -X, +Y, -Y, +Z (Frente), -Z (Trás)]
+      // Create an array of materials for the cube faces.
+      // Order: [+X, -X, +Y, -Y, +Z (Front), -Z (Back)]
       const materials = [
-        translucentMaterial, // +X (Direita)
-        translucentMaterial, // -X (Esquerda)
-        translucentMaterial, // +Y (Cima)
-        translucentMaterial, // -Y (Baixo)
-        solidFrontMaterial,  // +Z (Frente) - Azul Sólido
-        solidBackMaterial,   // -Z (Trás) - Vermelho Sólido
+        translucentMaterial, // +X (Right)
+        translucentMaterial, // -X (Left)
+        translucentMaterial, // +Y (Top)
+        translucentMaterial, // -Y (Bottom)
+        solidFrontMaterial,  // +Z (Front) - Solid Blue
+        solidBackMaterial,   // -Z (Back) - Solid Red
       ];
 
-      const cube = new THREE.Mesh(geometry, materials); // Aplica a array de materiais
+      const cube = new THREE.Mesh(geometry, materials); // Apply the array of materials.
 
-      const group = new THREE.Group(); // Usamos um grupo para aplicar a rotação inicial ao cubo
+      const group = new THREE.Group(); // Use a group to apply initial rotation to the cube.
       group.add(cube);
-      objectGroupRef.current = group; // Armazena o grupo na ref
-      scene.add(group); // Adiciona o grupo à cena apenas uma vez
+      objectGroupRef.current = group; // Store the group in the ref.
+      scene.add(group); // Add the group to the scene only once.
 
-      // Opcional: Adicionar arestas (wireframe) ao cubo para melhor visualização das rotações
+      // Optional: Add edges (wireframe) to the cube for better visualization of rotations.
       const edges = new THREE.EdgesGeometry(geometry);
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }); // Linhas pretas
+      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }); // Black lines.
       const wireframe = new THREE.LineSegments(edges, lineMaterial);
-      cube.add(wireframe); // Adiciona as linhas como um filho do cubo
+      cube.add(wireframe); // Add lines as a child of the cube.
 
-      // Define a rotação inicial como 0 em todos os eixos
-      // para que as faces de referência estejam diretamente apontadas para o utilizador.
+      // Set initial rotation to 0 on all axes, so reference faces point directly at the user.
       objectGroupRef.current.rotation.x = 0;
       objectGroupRef.current.rotation.y = 0;
       objectGroupRef.current.rotation.z = 0;
 
-      // Adiciona os event listeners ao elemento DOM do renderizador
+      // Add mouse event listeners to the renderer's DOM element for interaction.
       const domElement = renderer.domElement;
       domElement.addEventListener('mousedown', onMouseDown);
       domElement.addEventListener('mousemove', onMouseMove);
       domElement.addEventListener('mouseup', onMouseUp);
-      domElement.addEventListener('mouseleave', onMouseUp); // Para parar de arrastar se o mouse sair do canvas
+      domElement.addEventListener('mouseleave', onMouseUp); // Stop dragging if mouse leaves canvas.
     }
 
-    // 6. Loop de Animação
+    // 6. Animation Loop
     const animate = () => {
-      // Verifica se o renderizador, cena e câmera existem antes de renderizar
+      // Ensure renderer, scene, and camera exist before rendering.
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
         let currentX = 0;
         let currentY = 0;
         let currentZ = 0;
 
-        // Aplicar rotação com base nos dados do giroscópio
+        // Apply rotation based on gyroscope data.
         if (objectGroupRef.current && latestGyroDataRef.current) {
           const currentData = latestGyroDataRef.current;
-          // Pega o último valor de cada array (o mais recente)
+          // Get the latest value from each array.
           currentX = currentData.x[currentData.x.length - 1] || 0;
           currentY = currentData.y[currentData.y.length - 1] || 0;
           currentZ = currentData.z[currentData.z.length - 1] || 0;
 
-          // Fator de sensibilidade para ajustar a velocidade da rotação.
-          // Este valor pode ser ajustado para controlar a "velocidade" da rotação visual.
+          // Sensitivity factor to adjust rotation speed.
+          // This value can be adjusted to control the visual "speed" of rotation.
           const sensitivity = 0.01;
 
-          // ATUALIZADO: Mapeamento dos eixos de rotação
+          // UPDATED: Mapping of rotation axes.
           // Incoming X (horizontal) -> Three.js X-axis rotation (Pitch)
           objectGroupRef.current.rotation.x += THREE.MathUtils.degToRad(currentX) * sensitivity;
           // Incoming Z (vertical) -> Three.js Y-axis rotation (Yaw)
           objectGroupRef.current.rotation.y += THREE.MathUtils.degToRad(currentZ) * sensitivity;
-          // Incoming Y (profundidade) -> Three.js Z-axis rotation (Roll)
+          // Incoming Y (depth) -> Three.js Z-axis rotation (Roll)
           objectGroupRef.current.rotation.z += THREE.MathUtils.degToRad(currentY) * sensitivity;
         }
 
         rendererRef.current.render(sceneRef.current, cameraRef.current);
 
-        // Chama o callback para enviar os valores *instantâneos* (do backend)
-        // Estes valores ainda estão em graus/s, como vêm do backend.
+        // Call the callback to send the *instantaneous* values (from the backend).
+        // These values are still in deg/s, as they come from the backend.
         onRotationUpdate(currentX, currentY, currentZ);
       }
-      // Armazena o ID do próximo frame para que possa ser cancelado
+      // Store the ID of the next frame so it can be canceled.
       animationFrameIdRef.current = requestAnimationFrame(animate);
     };
 
-    // Inicia o loop de animação apenas se ainda não estiver rodando
+    // Start the animation loop only if it's not already running.
     if (animationFrameIdRef.current === null) {
       animate();
     }
 
     // 7. Cleanup
-    // Função de limpeza que será executada quando o componente for desmontado.
+    // Cleanup function that will be executed when the component is unmounted.
     return () => {
-      // Cancela o loop de animação se existir um ID
+      // Cancel the animation loop if an ID exists.
       if (animationFrameIdRef.current !== null) {
         cancelAnimationFrame(animationFrameIdRef.current);
-        animationFrameIdRef.current = null; // Reseta o ID
+        animationFrameIdRef.current = null; // Reset the ID.
       }
 
-      // Se o mountRef não contiver o canvas, significa que o componente está sendo desmontado.
+      // If `mountRef` does not contain the canvas, it means the component is being unmounted.
       if (!mountRef.current || !mountRef.current.contains(rendererRef.current?.domElement || null)) {
         console.log("Cleaning up Three.js scene");
-        // Remove event listeners
+        // Remove event listeners.
         if (rendererRef.current) {
           const domElement = rendererRef.current.domElement;
           domElement.removeEventListener('mousedown', onMouseDown);
@@ -207,7 +228,7 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({
           domElement.removeEventListener('mouseleave', onMouseUp);
         }
 
-        // Descarta os objetos do Three.js para liberar memória
+        // Dispose of Three.js objects to free up memory.
         if (objectGroupRef.current) {
           objectGroupRef.current.traverse((obj) => {
             if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
@@ -223,19 +244,19 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({
         }
         rendererRef.current?.dispose();
 
-        // Reseta as referências
+        // Reset references.
         objectGroupRef.current = null;
         rendererRef.current = null;
         cameraRef.current = null;
         sceneRef.current = null;
       }
     };
-  }, [cardWidth, cardHeight, onRotationUpdate]); // Adicionado onRotationUpdate às dependências
+  }, [cardWidth, cardHeight, onRotationUpdate]); // Added `onRotationUpdate` to dependencies.
 
-  // 5. Interatividade com o Mouse (Rotação) - Funções definidas fora do useEffect
-  // Estas funções ainda permitem a rotação manual, e a rotação do giroscópio irá ADICIONAR-SE a elas.
-  // Se quiser que a rotação do giroscópio seja a única fonte de rotação,
-  // pode remover estes event listeners e as funções onMouseDown, onMouseMove, onMouseUp.
+  // 5. Mouse Interaction (Rotation) - Functions defined outside useEffect.
+  // These functions still allow manual rotation, and gyroscope rotation will ADD to them.
+  // If you want gyroscope rotation to be the only source of rotation,
+  // you can remove these event listeners and the `onMouseDown`, `onMouseMove`, `onMouseUp` functions.
   const onMouseDown = (event: MouseEvent) => {
     setIsDragging(true);
     setPreviousMousePosition({ x: event.clientX, y: event.clientY });
@@ -249,8 +270,8 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({
 
     const rotationSpeed = 0.01;
 
-    // Modifica diretamente a rotação do objeto Three.js persistente
-    // Esta rotação do mouse irá ADICIONAR-SE à rotação do giroscópio.
+    // Directly modify the rotation of the persistent Three.js object.
+    // This mouse rotation will ADD to the gyroscope rotation.
     objectGroupRef.current.rotation.y += deltaX * rotationSpeed;
     objectGroupRef.current.rotation.x += deltaY * rotationSpeed;
 
@@ -264,7 +285,7 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({
   return (
     <div className="w-full h-full flex flex-col items-center justify-center">
       <div ref={mountRef} className="flex-1 w-full h-full">
-        {/* O canvas three.js será montado aqui */}
+        {/* The Three.js canvas will be mounted here */}
       </div>
     </div>
   );

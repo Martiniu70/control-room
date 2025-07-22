@@ -2,45 +2,68 @@
 import React from 'react';
 import { VisualizationContentProps } from '../CardWrapper';
 
-// Interface para os dados de Face Landmarks
+/**
+ * @file FaceLandmarksCardContent.tsx
+ * @description This component renders the visualization content for Face Landmarks data.
+ * It displays facial landmarks as a series of small circles on an SVG canvas,
+ * representing the detected points on a face.
+ */
+
+/**
+ * Interface for Face Landmarks data.
+ */
 interface FaceLandmarksData {
-  landmarks: number[][]; // Array de [x, y, z] pontos normalizados (0 a 1)
-  gaze_vector: { dx: number; dy: number };
-  ear: number; // Eye Aspect Ratio
-  blink_rate: number;
-  blink_counter: number;
-  frame_b64: string; // Imagem em base64
-  timestamp: number;
+  landmarks: number[][]; // Array of [x, y, z] normalized points (0 to 1).
+  gaze_vector: { dx: number; dy: number }; // Gaze direction vector.
+  ear: number;           // Eye Aspect Ratio.
+  blink_rate: number;    // Blink rate.
+  blink_counter: number; // Blink counter.
+  frame_b64: string;     // Base64 encoded image frame.
+  timestamp: number;     // Timestamp of the data.
 }
 
-// Interface para as props do componente de conteúdo
+/**
+ * Interface defining the props for the FaceLandmarksContent component,
+ * extending common visualization properties.
+ */
 interface FaceLandmarksContentProps extends VisualizationContentProps {
-  data: FaceLandmarksData;
-  // cardWidth e cardHeight já vêm de VisualizationContentProps
+  data: FaceLandmarksData; // Face landmarks data.
+  // cardWidth and cardHeight are inherited from VisualizationContentProps.
 }
 
+/**
+ * FaceLandmarksCardContent functional component.
+ * Displays facial landmarks as an SVG overlay of points.
+ * @param {FaceLandmarksContentProps} props - The properties passed to the component.
+ * @returns {JSX.Element} The face landmarks visualization JSX.
+ */
 const FaceLandmarksCardContent: React.FC<FaceLandmarksContentProps> = ({
   data,
-  cardWidth = 300, // Fornecer um valor padrão
-  cardHeight = 100, // Fornecer um valor padrão
+  cardWidth = 300,  // Default width if not provided.
+  cardHeight = 100, // Default height if not provided.
 }) => {
   const {
     landmarks,
-    // gaze_vector, // Não usado diretamente na visualização atual
-    // ear, blink_rate, blink_counter, timestamp são para detailsContent
-    // frame_b64, // Removido da visualização SVG para focar nos pontos
+    // `gaze_vector`, `ear`, `blink_rate`, `blink_counter`, `timestamp` are for `detailsContent`
+    // and are not directly used in this SVG visualization.
+    // `frame_b64` is also removed from this SVG visualization to focus on points.
   } = data;
 
-  // Definir margens para o SVG para dar espaço aos textos
+  // Define margins for the SVG to provide space.
   const svgMarginTop = 5;
   const svgMarginBottom = 5;
   const svgMarginLeft = 5;
   const svgMarginRight = 5;
 
+  // Calculate the effective width and height for the SVG drawing area.
   const svgWidth = cardWidth - svgMarginLeft - svgMarginRight;
   const svgHeight = cardHeight - svgMarginTop - svgMarginBottom;
 
-  // Escalas para mapear os landmarks normalizados (0-1) para as dimensões do SVG
+  /**
+   * Scales for mapping normalized landmark coordinates (0-1) to SVG pixel dimensions.
+   * @param val The normalized coordinate value.
+   * @returns {number} The scaled pixel value.
+   */
   const xScale = (val: number) => val * svgWidth;
   const yScale = (val: number) => val * svgHeight;
 
@@ -54,37 +77,37 @@ const FaceLandmarksCardContent: React.FC<FaceLandmarksContentProps> = ({
             viewBox={`0 0 ${svgWidth} ${svgHeight}`}
             className="border border-gray-300 rounded-md"
           >
-            {/* Desenha cada landmark como um pequeno círculo */}
+            {/* Draw each landmark as a small circle */}
             {landmarks.map((point, index) => {
-              // Ignoramos a coordenada Z para a visualização 2D
+              // Ignore the Z-coordinate for 2D visualization.
               const [x, y] = point;
-              // A condição index < 163 é para desenhar um subconjunto de pontos, se desejado.
-              // Se quiser todos, remova a condição.
+              // The condition `index < 163` is to draw a subset of points if desired.
+              // To draw all points, remove this condition.
               if (index < 163) {
                 return (
                   <circle
                     key={index}
                     cx={xScale(x)}
                     cy={yScale(y)}
-                    r={1.5} // Raio pequeno para os pontos
-                    fill="#e74c3c" // Cor vermelha para os pontos
+                    r={1.5} // Small radius for the points.
+                    fill="#e74c3c" // Red color for the points.
                     opacity={0.7}
-                    // Adicionado transition para animar o movimento dos pontos
+                    // Add transition for smooth movement of points.
                     style={{ transition: 'cx 0.1s linear, cy 0.1s linear' }}
                   />
                 );
               }
-              return null; // Retorna null para pontos não renderizados
+              return null; // Return null for points not rendered.
             })}
-            {/* Opcional: Desenhar um círculo no centro da face (aproximado) */}
+            {/* Optional: Draw a circle at the approximate center of the face */}
             {landmarks.length > 0 && (
               <circle
-                cx={xScale(landmarks[90][0])} // Usando o landmark 90 como referência de centro
+                cx={xScale(landmarks[90][0])} // Using landmark 90 as a center reference.
                 cy={yScale(landmarks[90][1])}
                 r={3}
-                fill="#3498db" // Azul para o centro
+                fill="#3498db" // Blue color for the center point.
                 opacity={0.9}
-                // Adicionado transition para animar o movimento do ponto central
+                // Add transition for smooth movement of the center point.
                 style={{ transition: 'cx 0.1s linear, cy 0.1s linear' }}
               />
             )}

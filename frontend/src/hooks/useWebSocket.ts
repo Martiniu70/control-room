@@ -2,128 +2,172 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-                               TYPES E INTERFACES
-═══════════════════════════════════════════════════════════════════════════════
+/**
+ * @file useWebSocket.ts
+ * @description Provides a custom React hook for managing WebSocket connections
+ * to receive real-time sensor data, anomaly alerts, and system health updates.
+ */
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+                               TYPES AND INTERFACES
+═══════════════════════════════════════════════════════════════════════════════
 */
 
-// Representa um ponto de dados individual (ECG, HR, EEG, etc.)
-interface SignalPoint {
-  timestamp: number;           // Quando foi capturado (Unix timestamp)
-  value: any;                 // O valor actual (pode ser número, array, objeto)
-  quality: number;            // Qualidade do sinal (0.0 a 1.0)
-  metadata: Record<string, any>; // Informação extra (fonte, tipo, etc.)
+/**
+ * Represents a single data point from a signal (e.g., ECG, HR, EEG).
+ * @template T The type of the value.
+ */
+interface SignalPoint<T = any> {
+  timestamp: number;           // Unix timestamp when the data was captured.
+  value: T;                    // The actual data value (can be number, array, object).
+  quality?: number;            // Optional signal quality (0.0 to 1.0).
+  metadata?: Record<string, any>; // Optional additional information (source, type, etc.).
 }
 
-// Mensagem de actualização de dados normais do backend
+/**
+ * Interface for normal data update messages from the backend.
+ */
 interface BackendSignalUpdate {
-  type: 'signal.update';      // Identificador do tipo de mensagem
-  signalType: 'cardiac' | 'eeg' | 'camera' | 'unity' | "sensors"; // Que sensor
-  // ATUALIZADO: Adicionado 'faceLandmarks' e 'blinks' ao dataType
-  dataType: 'ecg' | 'hr' | 'eegRaw' | 'eegBands' | 'faceLandmarks' | 'blinks' | 'steering' | 'speed' | "accelerometer" | "gyroscope"; // CORRIGIDO
-  timestamp: number;          // Quando foi processado
-  value: any;                // O valor dos dados
-  anomalies?: string[];      // Lista de anomalias detectadas (opcional)
+  type: 'signal.update';      // Message type identifier.
+  signalType: 'cardiac' | 'eeg' | 'camera' | 'unity' | "sensors"; // Type of sensor.
+  dataType: 'ecg' | 'hr' | 'eegRaw' | 'eegBands' | 'faceLandmarks' | 'blinks' | 'steering' | 'speed' | "accelerometer" | "gyroscope" | 'alcohol_level' | 'car_information'; // Specific data type.
+  timestamp: number;          // Timestamp when the data was processed.
+  value: any;                 // The data value.
+  anomalies?: string[];       // Optional list of detected anomalies.
 }
 
-// Mensagem de alerta de anomalia específica
+/**
+ * Interface for specific anomaly alert messages from the backend.
+ */
 interface BackendAnomalyAlert {
-  type: 'anomaly.alert';     // Tipo específico para anomalias
-  signalType: string;        // Que sinal (cardiac, eeg, etc.)
-  anomalyType: string;       // Tipo específico (bradycardia, electrode_loose, etc.)
-  severity: string;          // Gravidade (info, warning, critical)
-  message: string;           // Mensagem descritiva
-  timestamp: number;         // Quando foi detectada
-  value?: any;              // Valor que causou a anomalia (opcional)
-  threshold?: any;          // Threshold que foi ultrapassado (opcional)
+  type: 'anomaly.alert';      // Specific type for anomalies.
+  signalType: string;         // The signal type (cardiac, eeg, etc.).
+  anomalyType: string;        // The specific anomaly type (bradycardia, electrode_loose, etc.).
+  severity: string;           // Severity level (info, warning, critical).
+  message: string;            // Descriptive message of the anomaly.
+  timestamp: number;          // Timestamp when the anomaly was detected.
+  value?: any;                // Optional value that caused the anomaly.
+  threshold?: any;            // Optional threshold that was exceeded.
 }
 
-// Mensagem de heartbeat do sistema
+/**
+ * Interface for system heartbeat messages from the backend.
+ */
 interface BackendSystemHeartbeat {
-  type: 'system.heartbeat';  // Heartbeat periódico
-  timestamp: string;         // Timestamp do sistema
-  systemHealth: any;         // Estado geral do sistema
-  signalStatuses: any;       // Estado de todos os sinais
-  activeConnections: number; // Quantos clientes WebSocket conectados
-  uptime: number;           // Tempo que o sistema está a correr
+  type: 'system.heartbeat';   // Periodic heartbeat type.
+  timestamp: string;          // System timestamp.
+  systemHealth: any;          // General system health status.
+  signalStatuses: any;        // Status of all signals.
+  activeConnections: number;  // Number of active WebSocket clients.
+  uptime: number;             // System uptime in seconds.
 }
 
-// União de todos os tipos de mensagens possíveis do backend
+/**
+ * Union type for all possible backend message types.
+ */
 type BackendMessage =
   | BackendSignalUpdate
   | BackendAnomalyAlert
   | BackendSystemHeartbeat
   | {
   type: 'zmq.connected' | 'zmq.error' | 'zmq.warning' | 'zmq.heartbeat' | 'connection.established';
-  [key: string]: any; // Permite propriedades adicionais
+  [key: string]: any; // Allows for additional properties.
 };
 
-// Estado da conexão WebSocket
+/**
+ * Represents the current status of the WebSocket connection.
+ */
 interface ConnectionStatus {
-  connected: boolean;        // Se está conectado
-  reconnecting: boolean;     // Se está a tentar reconectar
-  error: string | null;     // Mensagem de erro (se houver)
+  connected: boolean;        // True if connected.
+  reconnecting: boolean;     // True if attempting to reconnect.
+  error: string | null;      // Error message if connection failed.
 }
 
-// ATUALIZADO: Inclui 'gyroscope' na LatestSensorData
+/**
+ * Interface for the latest sensor data, including accelerometer and gyroscope.
+ */
 interface LatestSensorData{
   accelerometer?:SignalPoint;
   gyroscope?: SignalPoint;
 }
 
-// ATUALIZADO: Inclui 'faceLandmarks' e 'blinks' na LatestCameraData
+/**
+ * Interface for the latest camera data, including face landmarks and blinks.
+ */
 interface LatestCameraData {
-  faceLandmarks?: SignalPoint; // CORRIGIDO: Propriedade para faceLandmarks
-  blinks?: SignalPoint;
+  faceLandmarks?: SignalPoint; // Face landmarks data point.
+  blinks?: SignalPoint;        // Blinks data point.
 }
 
-// O que o hook retorna para os componentes que o usam
+/**
+ * Interface for 'unity' type data.
+ */
+interface LatestUnityData {
+  steering?: SignalPoint;
+  speed?: SignalPoint;
+  alcohol_level?: SignalPoint<{ alcohol_level: number }>;
+  car_information?: SignalPoint<{ car_information: { speed: number; lane_centrality: number } }>;
+}
+
+
+/**
+ * The return type of the `useWebSocket` hook, providing access to
+ * latest data, connection status, recent anomalies, and connection control functions.
+ */
 interface UseWebSocketReturn {
-  // Dados mais recentes de cada tipo de sinal
   latestCardiacData: { ecg?: SignalPoint; hr?: SignalPoint } | null;
   latestEegData: { raw?: SignalPoint; bands?: SignalPoint } | null;
-  latestCameraData: LatestCameraData | null; // ATUALIZADO
-  latestUnityData: { steering?: SignalPoint; speed?: SignalPoint } | null;
+  latestCameraData: LatestCameraData | null;
+  latestUnityData: LatestUnityData | null;
   latestSensorData: LatestSensorData | null;
-
-  // Estado da conexão
   connectionStatus: ConnectionStatus;
-
-  // Lista das últimas anomalias detectadas
   recentAnomalies: string[];
-
-  // Funções para controlar a conexão manualmente
   connect: () => void;
   disconnect: () => void;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-                               HOOK PRINCIPAL
+                               MAIN HOOK
 ═══════════════════════════════════════════════════════════════════════════════
 */
 
+/**
+ * Custom React hook for establishing and managing a WebSocket connection.
+ * It provides real-time updates for various sensor data, anomaly alerts,
+ * and connection status.
+ *
+ * @param url The WebSocket server URL. Defaults to 'ws://localhost:8000/api/ws'.
+ * @returns An object containing the latest data, connection status,
+ * recent anomalies, and functions to control the connection.
+ */
 export const useWebSocket = (
   url: string = 'ws://localhost:8000/api/ws'
 ): UseWebSocketReturn => {
 
   /* ─────────────────────────────────────────────────────────────────────────────
-                                   ESTADO LOCAL
+                                   LOCAL STATE
   ─────────────────────────────────────────────────────────────────────────────
   */
 
+  // State to hold the latest cardiac signal data (ECG and HR).
   const [latestCardiacData, setLatestCardiacData] = useState<{ ecg?: SignalPoint; hr?: SignalPoint } | null>(null);
+  // State to hold the latest EEG signal data (raw and bands).
   const [latestEegData, setLatestEegData] = useState<{ raw?: SignalPoint; bands?: SignalPoint } | null>(null);
-  const [latestCameraData, setLatestCameraData] = useState<LatestCameraData | null>(null); // ATUALIZADO
-  const [latestUnityData, setLatestUnityData] = useState<{ steering?: SignalPoint; speed?: SignalPoint } | null>(null);
+  // State to hold the latest camera data (face landmarks and blinks).
+  const [latestCameraData, setLatestCameraData] = useState<LatestCameraData | null>(null);
+  // State to hold the latest Unity simulation data.
+  const [latestUnityData, setLatestUnityData] = useState<LatestUnityData | null>(null);
+  // State to hold the latest sensor data (accelerometer and gyroscope).
   const [latestSensorData, setLatestSensorData] = useState<LatestSensorData | null>(null);
 
+  // State to track the WebSocket connection status.
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     connected: false,
     reconnecting: false,
     error: null
   });
 
+  // State to store a list of recent anomaly alerts.
   const [recentAnomalies, setRecentAnomalies] = useState<string[]>([]);
 
   /* ─────────────────────────────────────────────────────────────────────────────
@@ -131,29 +175,41 @@ export const useWebSocket = (
   ─────────────────────────────────────────────────────────────────────────────
   */
 
+  // Ref to store the WebSocket instance, allowing it to persist across re-renders.
   const wsRef = useRef<WebSocket | null>(null);
+  // Ref to store the reconnection timeout ID, enabling clearing if needed.
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref to track the number of reconnection attempts.
   const reconnectAttempts = useRef<number>(0);
 
+  // Maximum number of reconnection attempts before giving up.
   const maxReconnectAttempts = 5;
+  // Delay in milliseconds between reconnection attempts.
   const reconnectDelay = 3000;
 
   /* ─────────────────────────────────────────────────────────────────────────────
-                              FUNÇÕES DE CONEXÃO
-  ─────────────────────────────────────────────────────────────────────────────────
+                              CONNECTION FUNCTIONS
+  ─────────────────────────────────────────────────────────────────────────────
   */
 
+  /**
+   * Establishes a WebSocket connection to the specified URL.
+   * Manages connection status and sets up event handlers.
+   */
   const connect = () => {
+    // If WebSocket is already open, prevent new connection attempts.
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('WebSocket already connected');
       return;
     }
 
     try {
-      console.log(`Connecting to WebSocket: ${url}`);
+      console.log(`Attempting to connect to WebSocket: ${url}`);
 
+      // Create a new WebSocket instance.
       wsRef.current = new WebSocket(url);
 
+      // Update connection status to indicate a reconnection attempt.
       setConnectionStatus(prev => ({ ...prev, reconnecting: true, error: null }));
 
       /* ┌─────────────────────────────────────────────────────────────────────────
@@ -161,6 +217,7 @@ export const useWebSocket = (
       └─────────────────────────────────────────────────────────────────────────
       */
 
+      // Handler for successful WebSocket connection.
       wsRef.current.onopen = () => {
         console.log('WebSocket connected successfully');
         setConnectionStatus({
@@ -168,11 +225,14 @@ export const useWebSocket = (
           reconnecting: false,
           error: null
         });
+        // Reset reconnection attempts on successful connection.
         reconnectAttempts.current = 0;
       };
 
+      // Handler for incoming WebSocket messages.
       wsRef.current.onmessage = (event) => {
         try {
+          // Parse the incoming message as a BackendMessage.
           const message: BackendMessage = JSON.parse(event.data);
           handleMessage(message);
         } catch (error) {
@@ -180,6 +240,7 @@ export const useWebSocket = (
         }
       };
 
+      // Handler for WebSocket closure.
       wsRef.current.onclose = (event) => {
         console.log('WebSocket disconnected:', event.code, event.reason);
         setConnectionStatus(prev => ({
@@ -188,9 +249,11 @@ export const useWebSocket = (
           error: event.reason || 'Connection closed'
         }));
 
+        // Attempt to reconnect if within the maximum allowed attempts.
         if (reconnectAttempts.current < maxReconnectAttempts) {
           scheduleReconnect();
         } else {
+          // If max attempts reached, update status to reflect failure.
           setConnectionStatus(prev => ({
             ...prev,
             reconnecting: false,
@@ -199,6 +262,7 @@ export const useWebSocket = (
         }
       };
 
+      // Handler for WebSocket errors.
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
         setConnectionStatus(prev => ({
@@ -216,17 +280,23 @@ export const useWebSocket = (
     }
   };
 
+  /**
+   * Closes the WebSocket connection and clears any pending reconnection timeouts.
+   */
   const disconnect = () => {
+    // Clear any active reconnection timeout.
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
 
+    // Close the WebSocket connection if it exists.
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
 
+    // Reset connection status.
     setConnectionStatus({
       connected: false,
       reconnecting: false,
@@ -234,31 +304,43 @@ export const useWebSocket = (
     });
   };
 
+  /**
+   * Schedules a reconnection attempt after a defined delay.
+   * Increments the reconnection attempt count.
+   */
   const scheduleReconnect = () => {
+    // Clear any existing reconnection timeout to prevent multiple attempts.
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
 
-    reconnectAttempts.current += 1;
+    reconnectAttempts.current += 1; // Increment attempt count.
 
+    // Update connection status to show reconnection progress.
     setConnectionStatus(prev => ({
       ...prev,
       reconnecting: true,
       error: `Reconnecting... (${reconnectAttempts.current}/${maxReconnectAttempts})`
     }));
 
+    // Set a timeout to call the connect function after the delay.
     reconnectTimeoutRef.current = setTimeout(() => {
       connect();
     }, reconnectDelay);
   };
 
   /* ─────────────────────────────────────────────────────────────────────────────
-                           PROCESSAMENTO DE MENSAGENS
+                           MESSAGE PROCESSING
   ─────────────────────────────────────────────────────────────────────────────
   */
 
+  /**
+   * Handles incoming messages from the WebSocket, directing them to appropriate handlers
+   * based on their `type` property.
+   * @param message The parsed `BackendMessage` received from the WebSocket.
+   */
   const handleMessage = (message: BackendMessage) => {
-    console.log('Received WebSocket message:', message); // Comentado para reduzir logs excessivos
+    console.log('Received WebSocket message:', message);
 
     switch (message.type) {
       case 'signal.update':
@@ -270,18 +352,16 @@ export const useWebSocket = (
         break;
 
       case 'system.heartbeat':
-        // console.log('System heartbeat received:', message); // Comentado para reduzir logs excessivos
+        // System heartbeat messages are often logged for debugging but can be verbose.
+        // console.log('System heartbeat received:', message);
         break;
 
       case 'zmq.connected':
       case 'zmq.error':
       case 'zmq.warning':
       case 'zmq.heartbeat':
-        console.log('ZeroMQ event:', message.type, message);
-        break;
-
       case 'connection.established':
-        console.log('Connection established:', message);
+        console.log('ZeroMQ event or connection status:', message.type, message);
         break;
 
       default:
@@ -289,16 +369,21 @@ export const useWebSocket = (
     }
   };
 
+  /**
+   * Processes `BackendSignalUpdate` messages, updating the relevant state
+   * with the latest signal data.
+   * @param message The `BackendSignalUpdate` message.
+   */
   const handleSignalUpdate = (message: BackendSignalUpdate) => {
     const { signalType, dataType, timestamp, value, anomalies } = message;
 
+    // Create a SignalPoint object from the message data.
     const signalPoint: SignalPoint = {
       timestamp,
       value,
-      quality: 1.0,
-      metadata: { dataType, source: 'backend' }
     };
 
+    // Update the appropriate state based on the signalType and dataType.
     switch (signalType) {
       case 'cardiac':
         setLatestCardiacData(prev => ({
@@ -315,10 +400,8 @@ export const useWebSocket = (
         break;
 
       case 'camera':
-        // Lógica para lidar com diferentes tipos de dados de câmera
         setLatestCameraData(prev => {
           const newCameraData = { ...prev };
-          // CORRIGIDO: Alterado 'landmarks' para 'faceLandmarks'
           if (dataType === 'faceLandmarks') {
             newCameraData.faceLandmarks = signalPoint;
           } else if (dataType === 'blinks') {
@@ -348,28 +431,39 @@ export const useWebSocket = (
         break;
     }
 
+    // If anomalies are present in the signal update, add them to recentAnomalies.
     if (anomalies && anomalies.length > 0) {
       setRecentAnomalies(prev => [
         ...anomalies.map(a => `${signalType}: ${a}`),
         ...prev
-      ].slice(0, 10));
+      ].slice(0, 10)); // Keep only the 10 most recent anomalies.
     }
   };
 
+  /**
+   * Processes `BackendAnomalyAlert` messages, formatting and adding them to
+   * the `recentAnomalies` state. 'info' level anomalies are ignored.
+   * @param message The `BackendAnomalyAlert` message.
+   */
   const handleAnomalyAlert = (message: BackendAnomalyAlert) => {
+    // Ignore 'info' level anomaly alerts to reduce noise.
     if (message.severity === 'info') {
       return;
     }
 
     console.warn(`🚨 ANOMALY: ${message.signalType} - ${message.message}`, message);
 
+    // Format the timestamp for display.
     const timestamp = new Date(message.timestamp).toLocaleTimeString();
 
+    // Determine an appropriate icon based on severity.
     const severityIcon = message.severity === 'critical' ? '🔴' :
                         message.severity === 'warning' ? '🟡' : '🔵';
 
+    // Construct the anomaly message string.
     const anomalyMessage = `${severityIcon} [${timestamp}] ${message.signalType}: ${message.message}`;
 
+    // Add the new anomaly message to the state, keeping only the 10 most recent.
     setRecentAnomalies(prev => [anomalyMessage, ...prev].slice(0, 10));
   };
 
@@ -378,27 +472,41 @@ export const useWebSocket = (
   ─────────────────────────────────────────────────────────────────────────────
   */
 
+  /**
+   * useEffect to establish WebSocket connection on component mount
+   * and close it on unmount. Re-connects if the URL changes.
+   */
   useEffect(() => {
-    connect();
+    connect(); // Initiate connection when the component mounts.
 
+    // Cleanup function: disconnects the WebSocket when the component unmounts.
     return () => {
       disconnect();
     };
-  }, [url]);
+  }, [url]); // Dependency array: re-run effect if 'url' changes.
 
+  /**
+   * useEffect to ensure any pending reconnection timeouts are cleared
+   * if the component unmounts unexpectedly.
+   */
   useEffect(() => {
+    // Cleanup function: clears the reconnect timeout when the component unmounts.
     return () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, []);
+  }, []); // Empty dependency array means this effect runs only once on mount and cleanup on unmount.
 
   /* ─────────────────────────────────────────────────────────────────────────────
-                                   RETORNO
+                                   RETURN VALUE
   ─────────────────────────────────────────────────────────────────────────────
   */
 
+  /**
+   * Returns the state and functions provided by the hook for consumption
+   * by React components.
+   */
   return {
     latestCardiacData,
     latestEegData,

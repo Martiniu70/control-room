@@ -1,52 +1,59 @@
 // src/config/cardConfig.ts
 
 import React from 'react';
-// Importar a interface para as props de conteúdo do CardWrapper
-import { VisualizationContentProps } from '../components/card/CardWrapper'; 
+import { VisualizationContentProps } from '../components/card/CardWrapper';
 
-// Importar os componentes de conteúdo para as visualizações
-// Certifique-se que o caminho está correto para a sua estrutura de pastas
-const ChartCardContent = React.lazy(() => import('../components/card/ChartCardContent')); 
-const EegRawCardContent = React.lazy(() => import("../components/card/eeg/EegRawCardContent")); 
-const EegBrainMapContent = React.lazy(() => import("../components/card/eeg/EegBrainMapContent")); 
+/**
+ * @file cardConfig.ts
+ * @description Centralized configuration for different types of data visualization cards.
+ * This file defines the structure and properties for each card, including
+ * signal type, display labels, default dimensions, units, colors, and
+ * available visualization components.
+ */
+
+// Lazy load visualization components to optimize bundle size and initial load time.
+const ChartCardContent = React.lazy(() => import('../components/card/ChartCardContent'));
+const EegRawCardContent = React.lazy(() => import("../components/card/eeg/EegRawCardContent"));
+const EegBrainMapContent = React.lazy(() => import("../components/card/eeg/EegBrainMapContent"));
 const HeartRatePulsingCircleContent = React.lazy(() => import('../components/card/heart_rate/PulsingHeartRateContent'));
-// NOVO: Importar o componente de conteúdo do Acelerômetro
 const AccCardContent = React.lazy(() => import('../components/card/acc/AccCardContent'));
-const GyroCardContent = React.lazy(() => import('../components/card/gyro/GyroCardContent'));
-// NOVO: Importar o componente de conteúdo do FaceLandmarks
 const FaceLandmarksCardContent = React.lazy(() => import('../components/card/face_landmarks/FaceLandmarksContent'));
+const GyroscopeCardContent = React.lazy(() => import('../components/card/gyro/GyroCardContent'));
+const AlcoholLevelCardContent = React.lazy(() => import("../components/card/alcohol_level/AlcoholLevelCardContent"));
+const CarInfoCardContent = React.lazy(() => import('../components/card/car_info/CarInfoCardContent'));
 
 
 /**
  * @interface BaseCardConfig
- * @description Define a interface base para todas as configurações de card.
+ * @description Defines the base interface for all card configurations.
  */
 export interface BaseCardConfig {
-  signalType: string; // Identificador único para o tipo de sinal (ex: 'hr', 'ecg', 'accelerometer')
-  label: string; // Rótulo de exibição para o tipo de sinal (ex: "Heart Rate", "ECG")
-  defaultColSpan: number; // Largura padrão em colunas da grade
-  defaultRowSpan: number; // Altura padrão em linhas da grade
-  unit?: string; // Unidade padrão para sinais baseados em gráfico (ex: 'bpm', 'mV')
-  color?: string; // Cor padrão para sinais baseados em gráfico (ex: '#8884d8')
-  
-  // NOVO: Array de configurações de visualização
+  signalType: string; // Unique identifier for the signal type (e.g., 'hr', 'ecg', 'accelerometer').
+  label: string;      // Display label for the signal type (e.g., "Heart Rate", "ECG").
+  defaultColSpan: number; // Default width in grid columns.
+  defaultRowSpan: number; // Default height in grid rows.
+  unit?: string;      // Optional default unit for graph-based signals (e.g., 'bpm', 'mV').
+  color?: string;     // Optional default color for graph-based signals (e.g., '#8884d8').
+
+  /**
+   * Array of visualization configurations, allowing a card to have multiple ways to display data.
+   */
   visualizations: Array<{
-    label: string; // Rótulo para o botão de alternar visualização
-    component: React.ComponentType<any>; // O componente React da visualização
-    // Pode adicionar outras props específicas da visualização aqui, se necessário
+    label: string; // Label for the visualization toggle button.
+    component: React.ComponentType<any>; // The React component for the visualization.
   }>;
 }
 
 /**
  * @typedef {BaseCardConfig} CardConfig
- * @description Tipo de união para todas as possíveis configurações de card.
+ * @description Type alias for `BaseCardConfig`, representing a complete card configuration.
  */
-export type CardConfig = BaseCardConfig; // Simplificado, pois 'visualizations' agora é a chave
+export type CardConfig = BaseCardConfig;
 
 /**
  * @constant {Record<string, CardConfig>} cardConfigs
- * @description Um mapa que armazena as configurações para cada tipo de card, indexado por `signalType`.
- * Isso permite uma recuperação fácil e centralizada das propriedades do card.
+ * @description A map that stores configurations for each card type, indexed by `signalType`.
+ * This allows for easy and centralized retrieval of card properties.
  */
 export const cardConfigs: Record<string, CardConfig> = {
   'hr': {
@@ -55,10 +62,10 @@ export const cardConfigs: Record<string, CardConfig> = {
     defaultColSpan: 1,
     defaultRowSpan: 1,
     unit: 'bpm',
-    color: '#8884d8', // Roxo
+    color: '#8884d8', // Purple
     visualizations: [
-      { label: 'Gráfico', component: ChartCardContent }, 
-      { label: 'Círculo Pulsante', component: HeartRatePulsingCircleContent }, 
+      { label: 'Gráfico', component: ChartCardContent },
+      { label: 'Círculo Pulsante', component: HeartRatePulsingCircleContent },
     ],
   },
   'ecg': {
@@ -67,22 +74,20 @@ export const cardConfigs: Record<string, CardConfig> = {
     defaultColSpan: 1,
     defaultRowSpan: 1,
     unit: 'mV',
-    color: '#82ca9d', // Verde
+    color: '#82ca9d', // Green
     visualizations: [
-      { label: 'Gráfico', component: ChartCardContent }, 
+      { label: 'Gráfico', component: ChartCardContent },
     ],
   },
   'eegRaw': {
     signalType: 'eegRaw',
     label: 'EEG Bruto',
-    defaultColSpan: 1, // EEG Raw pode se beneficiar de um tamanho padrão maior
+    defaultColSpan: 1,
     defaultRowSpan: 1,
     unit: 'µV',
-    // NOVO: Definindo múltiplas visualizações para eegRaw
     visualizations: [
-      { label: 'Gráfico de Canais', component: EegRawCardContent }, // Gráfico de linhas
-      { label: 'Mapa Cerebral', component: EegBrainMapContent },   // Mapa cerebral
-      // Poderíamos adicionar mais visualizações aqui, como um espectrograma, etc.
+      { label: 'Gráfico de Canais', component: EegRawCardContent },
+      { label: 'Mapa Cerebral', component: EegBrainMapContent },
     ],
   },
   'accelerometer': {
@@ -90,10 +95,10 @@ export const cardConfigs: Record<string, CardConfig> = {
     label: 'Acelerômetro',
     defaultColSpan: 1,
     defaultRowSpan: 1,
-    unit: 'm/s²', // Unidade padrão para aceleração
-    color: '#3498db', // Cor padrão para Acelerômetro
+    unit: 'm/s²', // Standard unit for acceleration
+    color: '#3498db', // Default color for Accelerometer
     visualizations: [
-      { label: 'Visualização 2D', component: AccCardContent }, // NOVO: Adicionado AccCardContent
+      { label: 'Visualização 2D/3D', component: AccCardContent },
     ],
   },
   'gyroscope': {
@@ -101,41 +106,64 @@ export const cardConfigs: Record<string, CardConfig> = {
     label: 'Giroscópio',
     defaultColSpan: 1,
     defaultRowSpan: 1,
-    unit: 'deg/s', // Unidade padrão para velocidade angular
+    unit: 'deg/s', // Standard unit for angular velocity
     visualizations: [
-      {label: "Giroscópio: Visualização 3D", component: GyroCardContent},
-      // { label: 'Cubo 3D', component: GyroCardContent }, // Assumindo que GyroCardContent é a visualização 3D
+      { label: 'Cubo 3D', component: GyroscopeCardContent },
     ],
   },
-  'faceLandmarks': { // NOVO: Configuração para FaceLandmarks
+  'faceLandmarks': {
     signalType: 'faceLandmarks',
     label: 'Pontos Faciais',
-    defaultColSpan: 1, // Pode ser maior para a imagem
+    defaultColSpan: 1,
     defaultRowSpan: 1,
     visualizations: [
-      { label: 'Visualização Facial', component: FaceLandmarksCardContent }, // Adicionado o componente de conteúdo
+      { label: 'Visualização Facial', component: FaceLandmarksCardContent },
     ],
   },
-  // Adicione mais configurações de card aqui conforme necessário para novos sinais
+  'alcohol_level': {
+    signalType: 'alcohol_level',
+    label: 'Nível de Álcool',
+    defaultColSpan: 1,
+    defaultRowSpan: 1,
+    unit: 'd/L', // Promille (per mille)
+    color: '#2ecc71', // Default color (green)
+    visualizations: [
+      { label: 'Indicador', component: AlcoholLevelCardContent },
+    ],
+  },
+  'car_information': {
+    signalType: 'car_information',
+    label: 'Info Carro',
+    defaultColSpan: 1,
+    defaultRowSpan: 1,
+    unit: 'km/h', // Default unit for speed, though the card has multiple
+    color: '#e67e22', // Default color (orange)
+    visualizations: [
+      { label: 'Detalhes do Carro', component: CarInfoCardContent },
+    ],
+  },
+  // Add more card configurations here as needed for new signals.
 };
 
 /**
  * @function getCardConfigBySignalName
- * @param {string} signalName - O nome do sinal recebido do backend (ex: 'hr_data', 'ecg_signal').
- * @returns {CardConfig | undefined} A configuração do card correspondente ou undefined se não for encontrada.
- * @description Esta função mapeia um `signalName` (que pode incluir sufixos) para o `signalType`
- * e retorna a configuração do card associada.
+ * @param {string} signalName - The signal name received from the backend (e.g., 'hr_data', 'ecg_signal').
+ * @returns {CardConfig | undefined} The corresponding card configuration or undefined if not found.
+ * @description This function maps a `signalName` (which may include suffixes) to its `signalType`
+ * and returns the associated card configuration. The order of checks is important:
+ * more specific checks should come first.
  */
 export const getCardConfigBySignalName = (signalName: string): CardConfig | undefined => {
-  // A ordem das verificações é IMPORTANTE: as verificações mais específicas devem vir primeiro.
   if (signalName.includes('eegRaw')) return cardConfigs['eegRaw'];
-  if (signalName.includes('faceLandmarks')) return cardConfigs['faceLandmarks']; // NOVO: Adicionado e movido para cima
+  if (signalName.includes('faceLandmarks')) return cardConfigs['faceLandmarks'];
   if (signalName.includes('hr')) return cardConfigs['hr'];
   if (signalName.includes('ecg')) return cardConfigs['ecg'];
   if (signalName.includes('eeg')) return cardConfigs['eeg'];
   if (signalName.includes('accelerometer')) return cardConfigs['accelerometer'];
   if (signalName.includes('gyroscope')) return cardConfigs['gyroscope'];
+  if (signalName.includes('alcohol_level')) return cardConfigs['alcohol_level'];
+  if (signalName.includes('car_information')) return cardConfigs['car_information'];
   if (signalName.includes('steering')) return cardConfigs['steering'];
   if (signalName.includes('speed')) return cardConfigs['speed'];
-  return undefined; // Retorna undefined se nenhum tipo de sinal correspondente for encontrado
+  return undefined; // Returns undefined if no matching signal type is found.
 };

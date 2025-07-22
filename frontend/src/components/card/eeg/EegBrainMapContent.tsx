@@ -1,35 +1,56 @@
 // components/EegBrainMapContent.tsx
 import React from 'react';
 
+/**
+ * @file EegBrainMapContent.tsx
+ * @description This component visualizes EEG brain activity on a simplified brain map.
+ * It displays "foci" (circles) at predefined brain regions, with their size and
+ * intensity (opacity) reflecting the amplitude of the EEG signal in that channel.
+ */
+
+/**
+ * Interface for a single EEG channel data point.
+ */
 interface EegChannelPoint {
-  x: number; // Tempo em segundos
-  value: number; // Valor do sinal
+  x: number;     // Time in seconds.
+  value: number; // Signal value.
 }
 
+/**
+ * Interface defining the props for the EegBrainMapContent component.
+ */
 interface EegBrainMapContentProps {
-  data: { [key: string]: EegChannelPoint[] };
-  cardWidth?: number;
-  cardHeight?: number;
-  selectedChannelKey?: string; // Canal selecionado para visualização
+  data: { [key: string]: EegChannelPoint[] }; // EEG data, organized by channel key.
+  cardWidth?: number;                         // Optional width of the card.
+  cardHeight?: number;                        // Optional height of the card.
+  selectedChannelKey?: string;                // Optional key of a specific channel to highlight/display.
 }
 
+/**
+ * EegBrainMapContent functional component.
+ * Renders an SVG representation of a brain map with dynamic circles
+ * indicating EEG activity.
+ * @param {EegBrainMapContentProps} props - The properties passed to the component.
+ * @returns {JSX.Element} The EEG brain map visualization JSX.
+ */
 const EegBrainMapContent: React.FC<EegBrainMapContentProps> = ({
   data,
   cardWidth = 300,
   cardHeight = 100,
-  selectedChannelKey, // Recebe o canal selecionado
+  selectedChannelKey, // Receives the selected channel key.
 }) => {
-  // Definir as coordenadas aproximadas para os focos no mapa cerebral (normalizadas 0-100)
-  // Estas coordenadas são relativas a um viewBox de 0 0 100 100 para o cérebro.
-  // Ajustadas para a nova escala do cérebro (escala 0.7, translação 15)
+  /**
+   * Defines approximate coordinates for brain foci on a normalized 0-100 viewBox.
+   * These positions are adjusted for the brain's scale and translation within the SVG.
+   */
   const brainFociPositions = {
-    ch0: { x: 39.5, y: 29, label: "Córtex Pré-frontal Esquerdo" }, // Parte esquerda do córtex pré-frontal
-    ch1: { x: 60.5, y: 29, label: "Córtex Pré-frontal Direito" },  // Parte direita do córtex pré-frontal
-    ch2: { x: 32.5, y: 60.5, label: "Área Auditória/Linguística" }, // Seção auditória e linguística (esquerda)
-    ch3: { x: 67.5, y: 60.5, label: "Área Auditória/Visual" },     // Seção auditória e de integração visual (direita)
+    ch0: { x: 39.5, y: 29, label: "Córtex Pré-frontal Esquerdo" },
+    ch1: { x: 60.5, y: 29, label: "Córtex Pré-frontal Direito" },
+    ch2: { x: 32.5, y: 60.5, label: "Área Auditória/Linguística" },
+    ch3: { x: 67.5, y: 60.5, label: "Área Auditória/Visual" },
   };
 
-  // Encontrar o valor máximo absoluto em todos os canais para normalização do raio
+  // Find the maximum absolute value across all channels for normalization of circle radius.
   let maxOverallValue = 0;
   Object.values(data).forEach(channelData => {
     if (channelData.length > 0) {
@@ -40,34 +61,44 @@ const EegBrainMapContent: React.FC<EegBrainMapContentProps> = ({
     }
   });
 
-  // Função para mapear a intensidade do sinal para o raio do círculo
+  /**
+   * Maps signal intensity to the radius of the circle.
+   * Ensures a minimum radius for visibility and scales up to a maximum radius.
+   * @param value The signal value.
+   * @returns {number} The calculated radius.
+   */
   const getRadius = (value: number) => {
-    if (maxOverallValue === 0) return 0; // Evita divisão por zero
-    // Raio mínimo para visibilidade, e escala até um raio máximo
+    if (maxOverallValue === 0) return 0; // Avoid division by zero.
     const minRadius = 3;
-    const maxRadius = 25; // AUMENTADO: de 15 para 25
+    const maxRadius = 25;
     const normalizedValue = Math.abs(value) / maxOverallValue;
     return minRadius + (maxRadius - minRadius) * normalizedValue;
   };
 
-  // Função para mapear a intensidade do sinal para a opacidade da cor
-  // Esta função agora será usada para a opacidade inicial do gradiente
+  /**
+   * Maps signal intensity to the peak opacity of the radial gradient.
+   * This creates a "glowing" effect where stronger signals are more opaque.
+   * @param value The signal value.
+   * @returns {number} The calculated peak opacity (0.0 to 1.0).
+   */
   const getGradientPeakOpacity = (value: number) => {
     if (maxOverallValue === 0) return 0;
     const normalizedValue = Math.abs(value) / maxOverallValue;
-    return 0.5 + 0.5 * normalizedValue; // Opacidade de 50% a 100% no pico do gradiente
+    return 0.5 + 0.5 * normalizedValue; // Opacity ranges from 50% to 100% at peak.
   };
 
-  // Cores base para os canais
+  // Base colors for each EEG channel.
   const channelColors = {
-    ch0: "#e74c3c", // Vermelho
-    ch1: "#27ae60", // Verde
-    ch2: "#3498db", // Azul
-    ch3: "#f39c12", // Laranja
+    ch0: "#e74c3c", // Red
+    ch1: "#27ae60", // Green
+    ch2: "#3498db", // Blue
+    ch3: "#f39c12", // Orange
   };
 
-  // Caminho SVG aprimorado para o contorno do cérebro
-  // Este caminho cria uma forma que afunila na frente e é mais larga/arredondada atrás.
+  /**
+   * Enhanced SVG path for the brain outline.
+   * This path creates a shape that tapers at the front and is wider/rounder at the back.
+   */
   const brainOutlinePath = `
     M 50,5
     C 15,0 10,20 5,50
@@ -75,13 +106,13 @@ const EegBrainMapContent: React.FC<EegBrainMapContentProps> = ({
     C 80,100 100,80 95,50
     C 90,20 85,0 50,5 Z
   `;
-  // A fissura central permanece a mesma, adaptando-se à nova forma
+  // Central fissure path, adapted to the new brain shape.
   const centralFissurePath = `M 50,5 C 48,20 48,80 50,95`;
 
-  // Fator de escala e translação para o cérebro
-  const scaleFactor = 0.7; // Reduzir o cérebro para 70% do tamanho
-  const translateX = (100 - 100 * scaleFactor) / 2; // Centralizar horizontalmente
-  const translateY = (100 - 100 * scaleFactor) / 2; // Centralizar verticalmente
+  // Scale and translation factors for the brain SVG.
+  const scaleFactor = 0.7; // Reduce brain size to 70%.
+  const translateX = (100 - 100 * scaleFactor) / 2; // Center horizontally.
+  const translateY = (100 - 100 * scaleFactor) / 2; // Center vertically.
 
 
   return (
@@ -89,15 +120,15 @@ const EegBrainMapContent: React.FC<EegBrainMapContentProps> = ({
       <svg
         width={cardWidth}
         height={cardHeight}
-        viewBox="0 0 100 100" // ViewBox para o desenho do cérebro
-        preserveAspectRatio="xMidYMid meet" // Mantém a proporção e centraliza
+        viewBox="0 0 100 100" // ViewBox for the brain drawing.
+        preserveAspectRatio="xMidYMid meet" // Maintain aspect ratio and center.
         className="bg-gray-50 rounded-md border border-gray-300"
       >
-        {/* Definições de gradientes radiais para os focos de luz */}
+        {/* Definitions for radial gradients used for the "foci" circles. */}
         <defs>
           {Object.keys(channelColors).map(channelKey => {
             const color = channelColors[channelKey as keyof typeof channelColors];
-            // Obter o último valor do canal para determinar a opacidade do pico
+            // Get the last value of the channel to determine the peak opacity of the gradient.
             const channelData = data[channelKey];
             const lastValue = channelData && channelData.length > 0
               ? channelData[channelData.length - 1].value
@@ -117,17 +148,17 @@ const EegBrainMapContent: React.FC<EegBrainMapContentProps> = ({
           })}
         </defs>
 
-        {/* Grupo para aplicar a transformação de escala e translação ao cérebro */}
+        {/* Group to apply scale and translation transformations to the brain outline. */}
         <g transform={`scale(${scaleFactor}) translate(${translateX / scaleFactor}, ${translateY / scaleFactor})`}>
-          {/* Contorno do cérebro */}
+          {/* Brain outline path */}
           <path
             d={brainOutlinePath}
-            fill="#dcdcdc" // Cor de fundo do cérebro
-            stroke="#a0a0a0" // Contorno do cérebro
+            fill="#dcdcdc" // Background color of the brain.
+            stroke="#a0a0a0" // Outline stroke color.
             strokeWidth="1"
           />
 
-          {/* Fissura Central */}
+          {/* Central fissure path */}
           <path
             d={centralFissurePath}
             fill="none"
@@ -136,21 +167,19 @@ const EegBrainMapContent: React.FC<EegBrainMapContentProps> = ({
           />
         </g>
 
-        {/* Focos de intensidade para cada canal (fora do grupo para manter o tamanho) */}
+        {/* Intensity foci for each channel (rendered outside the group to maintain size). */}
         {Object.entries(brainFociPositions).map(([channelKey, pos]) => {
-          // Lógica para mostrar apenas o canal selecionado, se houver
+          // Logic to only show the selected channel if one is specified.
           if (selectedChannelKey && selectedChannelKey !== channelKey) {
-            return null; // Não renderiza se um canal específico estiver selecionado e não for este
+            return null; // Don't render if a specific channel is selected and this is not it.
           }
 
           const channelData = data[channelKey];
           const lastValue = channelData && channelData.length > 0
             ? channelData[channelData.length - 1].value
-            : 0; // Último valor do canal ou 0 se não houver dados
+            : 0; // Last value of the channel or 0 if no data.
 
           const radius = getRadius(lastValue);
-          // A opacidade é agora controlada pelo gradiente, não pelo círculo diretamente
-          // const opacity = getOpacity(lastValue);
 
           return (
             <circle
@@ -158,11 +187,10 @@ const EegBrainMapContent: React.FC<EegBrainMapContentProps> = ({
               cx={pos.x}
               cy={pos.y}
               r={radius}
-              fill={`url(#gradient-${channelKey})`} // Aplicar o gradiente como preenchimento
-              // opacity={opacity} // Removido, pois o gradiente já lida com a opacidade
-              className="transition-all duration-300 ease-out" // Animação suave
+              fill={`url(#gradient-${channelKey})`} // Apply the radial gradient as fill.
+              className="transition-all duration-300 ease-out" // Smooth animation for changes.
             >
-              {/* Tooltip básico ao passar o mouse */}
+              {/* Basic tooltip on hover */}
               <title>{`${pos.label}: ${lastValue.toFixed(2)} ${data.unit || 'µV'}`}</title>
             </circle>
           );
