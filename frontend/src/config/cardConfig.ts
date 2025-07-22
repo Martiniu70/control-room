@@ -1,12 +1,21 @@
 // src/config/cardConfig.ts
 
 import React from 'react';
-// Importe os componentes de card aqui para referência de tipo, embora não sejam usados diretamente neste arquivo
-// import ChartCard from '../components/card/ChartCard';
-// import AccelerometerCard from '../components/card/AccCard';
-// import EegRawCard from '../components/card/EegRawCard';
-// import GyroscopeCard from '../components/card/GyroCard';
-// import FaceLandmarksCard from '../components/card/FaceLandmarksCard'; // NOVO: Import para referência de tipo
+// Importar a interface para as props de conteúdo do CardWrapper
+import { VisualizationContentProps } from '../components/card/CardWrapper'; 
+
+// Importar os componentes de conteúdo para as visualizações
+// Certifique-se que o caminho está correto para a sua estrutura de pastas
+const ChartCardContent = React.lazy(() => import('../components/card/ChartCardContent')); 
+const EegRawCardContent = React.lazy(() => import("../components/card/eeg/EegRawCardContent")); 
+const EegBrainMapContent = React.lazy(() => import("../components/card/eeg/EegBrainMapContent")); 
+const HeartRatePulsingCircleContent = React.lazy(() => import('../components/card/heart_rate/PulsingHeartRateContent'));
+// NOVO: Importar o componente de conteúdo do Acelerômetro
+const AccCardContent = React.lazy(() => import('../components/card/acc/AccCardContent'));
+const GyroCardContent = React.lazy(() => import('../components/card/gyro/GyroCardContent'));
+// NOVO: Importar o componente de conteúdo do FaceLandmarks
+const FaceLandmarksCardContent = React.lazy(() => import('../components/card/face_landmarks/FaceLandmarksContent'));
+
 
 /**
  * @interface BaseCardConfig
@@ -15,68 +24,24 @@ import React from 'react';
 export interface BaseCardConfig {
   signalType: string; // Identificador único para o tipo de sinal (ex: 'hr', 'ecg', 'accelerometer')
   label: string; // Rótulo de exibição para o tipo de sinal (ex: "Heart Rate", "ECG")
-  // 'componentType' define qual componente React será usado para renderizar este card.
-  // Isso permite que MainGrid.tsx decida dinamicamente qual componente importar e renderizar.
-  componentType: 'chart' | 'accelerometer' | 'eegRaw' | 'gyroscope' | 'faceLandmarks'; // ATUALIZADO
   defaultColSpan: number; // Largura padrão em colunas da grade
   defaultRowSpan: number; // Altura padrão em linhas da grade
   unit?: string; // Unidade padrão para sinais baseados em gráfico (ex: 'bpm', 'mV')
   color?: string; // Cor padrão para sinais baseados em gráfico (ex: '#8884d8')
+  
+  // NOVO: Array de configurações de visualização
+  visualizations: Array<{
+    label: string; // Rótulo para o botão de alternar visualização
+    component: React.ComponentType<any>; // O componente React da visualização
+    // Pode adicionar outras props específicas da visualização aqui, se necessário
+  }>;
 }
 
 /**
- * @interface ChartCardConfig
- * @extends BaseCardConfig
- * @description Configuração específica para cards do tipo 'chart'.
- */
-interface ChartCardConfig extends BaseCardConfig {
-  componentType: 'chart';
-  unit: string; // Unidade é obrigatória para ChartCard
-  color: string; // Cor é obrigatória para ChartCard
-}
-
-/**
- * @interface AccelerometerCardConfig
- * @extends BaseCardConfig
- * @description Configuração específica para cards do tipo 'accelerometer'.
- */
-interface AccelerometerCardConfig extends BaseCardConfig {
-  componentType: 'accelerometer';
-}
-
-/**
- * @interface EegRawCardConfig
- * @extends BaseCardConfig
- * @description Configuração específica para cards do tipo 'eegRaw'.
- */
-interface EegRawCardConfig extends BaseCardConfig {
-  componentType: 'eegRaw';
-  unit: string; // Unidade é obrigatória para EegRawCard
-}
-
-/**
- * @interface GyroscopeCardConfig
- * @extends BaseCardConfig
- * @description Configuração específica para cards do tipo 'gyroscope'.
- */
-interface GyroscopeCardConfig extends BaseCardConfig {
-  componentType: 'gyroscope';
-}
-
-/**
- * @interface FaceLandmarksCardConfig
- * @extends BaseCardConfig
- * @description Configuração específica para cards do tipo 'faceLandmarks'.
- */
-interface FaceLandmarksCardConfig extends BaseCardConfig {
-  componentType: 'faceLandmarks';
-}
-
-/**
- * @typedef {ChartCardConfig | AccelerometerCardConfig | EegRawCardConfig | GyroscopeCardConfig | FaceLandmarksCardConfig} CardConfig
+ * @typedef {BaseCardConfig} CardConfig
  * @description Tipo de união para todas as possíveis configurações de card.
  */
-export type CardConfig = ChartCardConfig | AccelerometerCardConfig | EegRawCardConfig | GyroscopeCardConfig | FaceLandmarksCardConfig; // ATUALIZADO
+export type CardConfig = BaseCardConfig; // Simplificado, pois 'visualizations' agora é a chave
 
 /**
  * @constant {Record<string, CardConfig>} cardConfigs
@@ -87,78 +52,69 @@ export const cardConfigs: Record<string, CardConfig> = {
   'hr': {
     signalType: 'hr',
     label: 'Frequência Cardíaca',
-    componentType: 'chart',
     defaultColSpan: 1,
     defaultRowSpan: 1,
     unit: 'bpm',
     color: '#8884d8', // Roxo
+    visualizations: [
+      { label: 'Gráfico', component: ChartCardContent }, 
+      { label: 'Círculo Pulsante', component: HeartRatePulsingCircleContent }, 
+    ],
   },
   'ecg': {
     signalType: 'ecg',
     label: 'ECG',
-    componentType: 'chart',
     defaultColSpan: 1,
     defaultRowSpan: 1,
     unit: 'mV',
     color: '#82ca9d', // Verde
-  },
-  'eeg': { // Assumindo que 'eeg' é um gráfico genérico, se não for raw
-    signalType: 'eeg',
-    label: 'EEG (Processado)',
-    componentType: 'chart',
-    defaultColSpan: 1,
-    defaultRowSpan: 1,
-    unit: 'µV',
-    color: '#ffc658', // Amarelo
+    visualizations: [
+      { label: 'Gráfico', component: ChartCardContent }, 
+    ],
   },
   'eegRaw': {
     signalType: 'eegRaw',
     label: 'EEG Bruto',
-    componentType: 'eegRaw',
     defaultColSpan: 1, // EEG Raw pode se beneficiar de um tamanho padrão maior
     defaultRowSpan: 1,
     unit: 'µV',
+    // NOVO: Definindo múltiplas visualizações para eegRaw
+    visualizations: [
+      { label: 'Gráfico de Canais', component: EegRawCardContent }, // Gráfico de linhas
+      { label: 'Mapa Cerebral', component: EegBrainMapContent },   // Mapa cerebral
+      // Poderíamos adicionar mais visualizações aqui, como um espectrograma, etc.
+    ],
   },
   'accelerometer': {
     signalType: 'accelerometer',
     label: 'Acelerômetro',
-    componentType: 'accelerometer',
     defaultColSpan: 1,
     defaultRowSpan: 1,
     unit: 'm/s²', // Unidade padrão para aceleração
+    color: '#3498db', // Cor padrão para Acelerômetro
+    visualizations: [
+      { label: 'Visualização 2D', component: AccCardContent }, // NOVO: Adicionado AccCardContent
+    ],
   },
   'gyroscope': {
     signalType: 'gyroscope',
     label: 'Giroscópio',
-    componentType: 'gyroscope',
     defaultColSpan: 1,
     defaultRowSpan: 1,
     unit: 'deg/s', // Unidade padrão para velocidade angular
+    visualizations: [
+      {label: "Giroscópio: Visualização 3D", component: GyroCardContent},
+      // { label: 'Cubo 3D', component: GyroCardContent }, // Assumindo que GyroCardContent é a visualização 3D
+    ],
   },
   'faceLandmarks': { // NOVO: Configuração para FaceLandmarks
     signalType: 'faceLandmarks',
-    label: 'Face Landmarks',
-    componentType: 'faceLandmarks',
-    defaultColSpan: 1,
-    defaultRowSpan: 1, // Pode ser maior para a imagem
-  },
-  'steering': {
-    signalType: 'steering',
-    label: 'Ângulo de Direção',
-    componentType: 'chart',
-    defaultColSpan: 1,
+    label: 'Pontos Faciais',
+    defaultColSpan: 1, // Pode ser maior para a imagem
     defaultRowSpan: 1,
-    unit: 'deg',
-    color: '#ff7300', // Laranja
-  },
-  'speed': {
-    signalType: 'speed',
-    label: 'Velocidade do Veículo',
-    componentType: 'chart',
-    defaultColSpan: 1,
-    defaultRowSpan: 1,
-    unit: 'km/h',
-    color: '#00c49f', // Ciano
+    visualizations: [
+      { label: 'Visualização Facial', component: FaceLandmarksCardContent }, // Adicionado o componente de conteúdo
+    ],
   },
   // Adicione mais configurações de card aqui conforme necessário para novos sinais
 };

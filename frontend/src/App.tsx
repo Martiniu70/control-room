@@ -59,7 +59,7 @@ interface CardType {
   colSpan: number;
   rowSpan: number;
   signalType: CardConfig['signalType']; // Usa o tipo de signalType da CardConfig
-  componentType: CardConfig['componentType']; // NOVO: Adiciona o tipo de componente para renderização dinâmica
+  // REMOVIDO: componentType, pois não é mais necessário aqui
   signalName: string;
   component: string;
   unit?: string; // Opcional, pode vir da config
@@ -333,7 +333,7 @@ function App() {
       colSpan: cardConfig.defaultColSpan,
       rowSpan: cardConfig.defaultRowSpan,
       signalType: cardConfig.signalType,
-      componentType: cardConfig.componentType, // Define o tipo de componente aqui
+      // REMOVIDO: componentType: cardConfig.componentType, // Define o tipo de componente aqui
       signalName: signalName,
       component: component,
       unit: cardConfig.unit, // Adiciona a unidade se disponível na config
