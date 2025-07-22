@@ -214,7 +214,6 @@ class SignalControlManager:
         
         # Configurações centralizadas
         self.config = settings.signalControl
-        print("\n\n\n\n\n\n\n NO INIT DO SIGNAL CONTROL MANAGER")
         
         # Componentes registados
         self.components: Dict[str, SignalControlInterface] = {}
@@ -243,7 +242,6 @@ class SignalControlManager:
         self._loadPersistedState()
         
         self.logger.info("SignalControlManager initialized")
-        print("\n\n\n\n\n\n\n\n NO FIM DO INIT DE SIGNAL CONTROL MANAGER")
     
     def registerComponent(self, name: str, component: SignalControlInterface) -> None:
         """
