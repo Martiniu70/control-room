@@ -1,42 +1,55 @@
-// components/EegRawCard.tsx
-import React from "react";
+// components/EegRawCardContent.tsx
+import React, { useState } from "react"; // Importar useState
 import { scaleLinear } from "@visx/scale";
 import { Group } from "@visx/group";
 import { LinePath } from "@visx/shape";
 import { AxisLeft, AxisBottom } from "@visx/axis";
 import { curveMonotoneX } from "@visx/curve";
-import CardWrapper from './CardWrapper'; // Importar o CardWrapper
+
+// NOVO: Interface para as props de conteúdo do EegRawCard
+// Agora estende VisualizationContentProps do CardWrapper
+import { VisualizationContentProps } from '../CardWrapper';
+// Não importa CardWrapper aqui, pois este é o conteúdo interno
 
 // Interface para um ponto de dados de um canal EEG
 interface EegChannelPoint {
   x: number; // Tempo em segundos
   value: number; // Valor do sinal
-}
+} // Importar do CardWrapper
 
-interface EegRawContentProps { // Conteúdo real do gráfico
-  data: { [key: string]: EegChannelPoint[] };
+interface EegRawContentProps extends VisualizationContentProps {
+  data: { [key: string]: EegChannelPoint[] }; // Dados específicos para EEG Raw
   unit?: string;
-  cardWidth: number;
-  cardHeight: number;
+  selectedChannelKey?: string; // Canal selecionado para visualização
+  // cardWidth e cardHeight já vêm de VisualizationContentProps
 }
 
 const EegRawCardContent: React.FC<EegRawContentProps> = ({
   data,
   unit = "µV",
-  cardWidth,
-  cardHeight,
+  cardWidth = 300, // Fornecer um valor padrão
+  cardHeight = 100, // Fornecer um valor padrão
+  selectedChannelKey, // Recebe o canal selecionado
 }) => {
-  const margin = { top: 25, right: 40, bottom: 120, left: 40 };
+  // Gerar um ID único para o clipPath para evitar colisões
+  const [clipId] = useState(() => `eeg-raw-clip-${Math.random().toString(36).substr(2, 9)}`); //
+
+  const margin = { top: 15, right: 30, bottom: 40, left: 40 }; // Margens ajustadas para a área de visualização
+
+  // Filtrar os dados com base no canal selecionado
+  const channelsToDisplay = selectedChannelKey
+    ? { [selectedChannelKey]: data[selectedChannelKey] || [] } // Apenas o canal selecionado
+    : data; // Todos os canais
 
   // Obter todos os valores de todos os canais para determinar o domínio Y
   const allYValues: number[] = [];
-  Object.values(data).forEach(channelData => {
+  Object.values(channelsToDisplay).forEach(channelData => {
     channelData.forEach(point => allYValues.push(point.value));
   });
 
   // Determinar o domínio X com base nos dados disponíveis
   const allXValues: number[] = [];
-  Object.values(data).forEach(channelData => {
+  Object.values(channelsToDisplay).forEach(channelData => {
     channelData.forEach(point => allXValues.push(point.x));
   });
 
@@ -113,17 +126,17 @@ const EegRawCardContent: React.FC<EegRawContentProps> = ({
   };
 
   // Definir as dimensões da área de plotagem para o clipPath
-  const plotX = margin.left + 5;
+  const plotX = margin.left;
   const plotY = margin.top;
   const plotWidth = cardWidth - margin.left - margin.right;
   const plotHeight = cardHeight - margin.top - margin.bottom;
 
   return (
-    <div className="w-full h-full flex flex-col justify-between">
+    <div className="w-full h-full flex flex-col justify-center items-center">
       <svg width={cardWidth} height={cardHeight}>
-        {/* Definir o clipPath */}
+        {/* Definir o clipPath com um ID único */}
         <defs>
-          <clipPath id="eeg-raw-clip">
+          <clipPath id={clipId}>
             <rect
               x={plotX}
               y={plotY}
@@ -172,7 +185,7 @@ const EegRawCardContent: React.FC<EegRawContentProps> = ({
             />
           ))}
 
-          {Object.entries(data).map(([channelName, channelData]) => (
+          {Object.entries(channelsToDisplay).map(([channelName, channelData]) => (
             <LinePath
               key={`eeg-line-${channelName}`}
               data={channelData}
@@ -181,13 +194,13 @@ const EegRawCardContent: React.FC<EegRawContentProps> = ({
               stroke={channelColors[channelName as keyof typeof channelColors] || "#95a5a6"}
               strokeWidth={1.5}
               curve={curveMonotoneX}
-              // Aplicar o clipPath aqui
-              clipPath="url(#eeg-raw-clip)"
+              // Aplicar o clipPath aqui com o ID único
+              clipPath={`url(#${clipId})`} //
             />
           ))}
 
           {/* Opcional: Adicionar círculos para o último ponto de cada canal */}
-          {Object.entries(data).map(([channelName, channelData]) => {
+          {Object.entries(channelsToDisplay).map(([channelName, channelData]) => {
             if (channelData.length > 0) {
               const lastPoint = channelData[channelData.length - 1];
               return (
@@ -199,7 +212,7 @@ const EegRawCardContent: React.FC<EegRawContentProps> = ({
                   fill={channelColors[channelName as keyof typeof channelColors] || "#95a5a6"}
                   opacity={0.8}
                   // Aplicar o clipPath também ao círculo para consistência
-                  clipPath="url(#eeg-raw-clip)"
+                  clipPath={`url(#${clipId})`} //
                 />
               );
             }
@@ -207,68 +220,8 @@ const EegRawCardContent: React.FC<EegRawContentProps> = ({
           })}
         </Group>
       </svg>
-
-      <div className="flex justify-between text-xs text-gray-500 mt-1">
-        <span>Min Y: {getDisplayPrecision(yMinData)} {unit}</span>
-        <span>Max Y: {getDisplayPrecision(yMaxData)} {unit}</span>
-      </div>
     </div>
   );
 };
 
-// Componente Wrapper para uso externo
-interface EegRawCardProps {
-    title: string;
-    data: { [key: string]: EegChannelPoint[] };
-    width?: number;
-    height?: number;
-    unit?: string;
-}
-
-const EegRawCard: React.FC<EegRawCardProps> = ({
-    title,
-    data,
-    width,
-    height,
-    unit = "µV",
-}) => {
-    const headerContent = (
-        <div className="text-right">
-            <div className="text-sm font-bold" style={{ color: "#8884d8" }}>
-                EEG Raw ({unit})
-            </div>
-            <div className="text-xs text-gray-500">
-                Canais: {Object.keys(data).length}
-            </div>
-        </div>
-    );
-
-    // A condição hasData permanece a mesma, pois ela verifica a existência de dados
-    const hasData = Object.keys(data).some(channel => data[channel].length > 0);
-
-    // Adicionado console.log para depuração
-    console.log("EegRawCard - data prop:", data);
-    console.log("EegRawCard - hasData:", hasData);
-
-    return (
-        <CardWrapper
-            title={title}
-            width={width}
-            height={height}
-            isLoading={!hasData} // Isso ainda é a lógica correta para mostrar o estado de carregamento
-            noDataMessage="A aguardar dados EEG brutos..."
-            headerContent={headerContent}
-        >
-            {hasData ? ( // Renderiza o conteúdo apenas se houver dados
-                <EegRawCardContent
-                    data={data}
-                    unit={unit}
-                    cardWidth={width || 300}
-                    cardHeight={height || 200}
-                />
-            ) : null}
-        </CardWrapper>
-    );
-};
-
-export default EegRawCard;
+export default EegRawCardContent;

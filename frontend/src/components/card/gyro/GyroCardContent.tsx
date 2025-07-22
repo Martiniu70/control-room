@@ -1,7 +1,7 @@
-// components/GyroscopeCard.tsx
+// src/components/card/gyroscope/GyroscopeCardContent.tsx
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import CardWrapper from './CardWrapper'; // Importar o CardWrapper
+import { VisualizationContentProps } from '../CardWrapper'; // Importar a interface
 
 // Define a interface para os dados do giroscópio
 interface GyroscopeData {
@@ -11,15 +11,19 @@ interface GyroscopeData {
 }
 
 // Define as propriedades do componente GyroscopeContent
-interface GyroscopeContentProps { // Conteúdo real da visualização 3D
-  data: GyroscopeData | null;
-  cardWidth: number;
-  cardHeight: number;
+interface GyroscopeContentProps extends VisualizationContentProps {
+  data: GyroscopeData | null; // Data pode ser null aqui, o componente interno deve lidar
+  // cardWidth e cardHeight já vêm de VisualizationContentProps
   // Callback para enviar os valores de rotação para o componente pai
-  onRotationUpdate: (x: number, y: number, z: number) => void; 
+  onRotationUpdate: (x: number, y: number, z: number) => void;
 }
 
-const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({ data, cardWidth, cardHeight, onRotationUpdate }) => {
+const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({
+  data,
+  cardWidth = 300, // Fornecer um valor padrão
+  cardHeight = 100, // Fornecer um valor padrão
+  onRotationUpdate
+}) => {
   // Referência para o elemento canvas onde a cena 3D será renderizada
   const mountRef = useRef<HTMLDivElement>(null);
   // Refs para armazenar as instâncias do Three.js que devem persistir
@@ -31,7 +35,7 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({ data, cardWidth
   // Ref para armazenar a versão mais recente dos dados do giroscópio
   const latestGyroDataRef = useRef<GyroscopeData | null>(null);
 
-  // Estados para controlar a rotação da esfera com o mouse
+  // Estados para controlar a rotação da esfera com o mouse (opcional, pode ser removido se apenas dados do giroscópio forem usados)
   const [isDragging, setIsDragging] = useState(false);
   const [previousMousePosition, setPreviousMousePosition] = useState({ x: 0, y: 0 });
 
@@ -63,9 +67,9 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({ data, cardWidth
     camera.updateProjectionMatrix(); // Recalcula a matriz de projeção da câmera
 
     // 3. Configuração do Renderizador (inicializa apenas uma vez, atualiza em redimensionamento)
-    const renderWidth = cardWidth - 30; 
-    const renderHeight = cardHeight - 100; 
-    
+    const renderWidth = cardWidth - 10; // Pequena margem
+    const renderHeight = cardHeight - 10; // Pequena margem
+
     if (!rendererRef.current) {
       rendererRef.current = new THREE.WebGLRenderer({ antialias: true });
       mountRef.current.innerHTML = ''; // Limpa qualquer canvas anterior para evitar duplicatas
@@ -156,7 +160,7 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({ data, cardWidth
 
           // Fator de sensibilidade para ajustar a velocidade da rotação.
           // Este valor pode ser ajustado para controlar a "velocidade" da rotação visual.
-          const sensitivity = 0.01; 
+          const sensitivity = 0.01;
 
           // ATUALIZADO: Mapeamento dos eixos de rotação
           // Incoming X (horizontal) -> Three.js X-axis rotation (Pitch)
@@ -266,66 +270,4 @@ const GyroscopeCardContent: React.FC<GyroscopeContentProps> = ({ data, cardWidth
   );
 };
 
-// Componente Wrapper para uso externo
-interface GyroscopeCardProps {
-    title: string;
-    data: GyroscopeData | null;
-    width?: number;
-    height?: number;
-}
-
-const GyroscopeCard: React.FC<GyroscopeCardProps> = ({
-    title,
-    data,
-    width,
-    height,
-}) => {
-    // Estado para armazenar os valores de rotação para exibição no header
-    // Iniciado com null para indicar "sem dados" ou "ainda não recebido"
-    const [displayRotationValues, setDisplayRotationValues] = useState<{ x: number; y: number; z: number } | null>(null);
-
-    // Callback para atualizar os valores de rotação
-    const handleRotationUpdate = useCallback((x: number, y: number, z: number) => {
-        setDisplayRotationValues({ x, y, z });
-    }, []);
-
-    // Determine if there's any data present to show content or the "no data" message
-    const hasData = data && (data.x.length > 0 || data.y.length > 0 || data.z.length > 0);
-
-    // Conteúdo do cabeçalho para o CardWrapper
-    const headerContent = (
-        <div className="text-right text-sm text-gray-700">
-            {displayRotationValues ? (
-                <>
-                    <p>X: {displayRotationValues.x.toFixed(2)} deg/s</p> {/* Unidade para deg/s */}
-                    <p>Y: {displayRotationValues.y.toFixed(2)} deg/s</p>
-                    <p>Z: {displayRotationValues.z.toFixed(2)} deg/s</p>
-                </>
-            ) : (
-                <p>N/A</p> // Mensagem quando não há dados de rotação para exibir
-            )}
-        </div>
-    );
-
-    return (
-        <CardWrapper
-            title={title}
-            width={width}
-            height={height}
-            isLoading={!hasData}
-            noDataMessage="Waiting for gyroscope data..."
-            headerContent={headerContent} // Passa o conteúdo do cabeçalho
-        >
-            {hasData ? (
-                <GyroscopeCardContent
-                    data={data}
-                    cardWidth={width || 300}
-                    cardHeight={height || 200}
-                    onRotationUpdate={handleRotationUpdate} // Passa o callback
-                />
-            ) : null}
-        </CardWrapper>
-    );
-};
-
-export default GyroscopeCard;
+export default GyroscopeCardContent;

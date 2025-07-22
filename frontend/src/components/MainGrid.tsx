@@ -1,29 +1,29 @@
-// MainGrid.tsx
+// src/components/MainGrid.tsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import GridLayout, { Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
-// Importar todos os componentes de card diretamente
-import ChartCard from "./card/ChartCard";
-import AccelerometerCard from "./card/AccCard";
-import EegRawCard from "./card/EegRawCard";
-import GyroscopeCard from "./card/GyroCard";
-import FaceLandmarksCard from "./card/FaceLandmarksCard"; // NOVO: Importar o FaceLandmarksCard
+// Importar apenas o CardWrapper
+import CardWrapper from "./card/CardWrapper"; 
+// Importar os wrappers de card específicos
+import EegRawCard from './card/eeg/EegRawCard'; 
+import HeartRateCard from './card/heart_rate/HeartRateCard'; 
+import EcgCard from './card/ecg/EcgCard'; 
+import AccCard from './card/acc/AccCard'; 
+import GyroCard from './card/gyro/GyroCard'; // NOVO: Importar o GyroCard
 
-// Importar a interface CardConfig para tipagem
-import { CardConfig } from "../config/cardConfig";
+// Importar a interface CardConfig e a função getCardConfigBySignalName
+import { CardConfig, getCardConfigBySignalName } from "../config/cardConfig";
 
-// ATUALIZADO: A interface CardType agora é mais detalhada, incluindo componentType
+// ATUALIZADO: A interface CardType agora é mais simples, pois o CardWrapper gerencia as visualizações
 interface CardType {
   id: string;
   label: string;
   colSpan: number;
   rowSpan: number;
   signalType: CardConfig['signalType'];
-  componentType: CardConfig['componentType']; // NOVO: Adiciona o tipo de componente para renderização dinâmica
-  signalName: string;
-  component: string;
+  signalName: string; // O nome completo do sinal (ex: 'hr_data', 'eegRaw_ch0')
   unit?: string; // Opcional, pode vir da config
   color?: string; // Opcional, pode vir da config
 }
@@ -51,15 +51,14 @@ interface EegRawProcessedData {
   [channel: string]: { x: number; value: number }[];
 }
 
-// ATUALIZADO: Interface para os dados de Face Landmarks com a nova estrutura
 interface FaceLandmarksProcessedData {
   landmarks: number[][];
   gaze_vector: { dx: number; dy: number };
   ear: number;
   blink_rate: number;
   blink_counter: number;
-  frame_b64: string; // 'confidence' removido
-  timestamp: number; // Timestamp do SignalPoint
+  frame_b64: string;
+  timestamp: number;
 }
 
 
@@ -70,7 +69,7 @@ interface MainGridProps {
   accelerometerData: AccelerometerProcessedData | null;
   gyroscopeData: GyroscopeProcessedData | null;
   eegRawData: EegRawProcessedData;
-  faceLandmarksData: FaceLandmarksProcessedData | null; // NOVO: Prop para dados de face landmarks
+  faceLandmarksData: FaceLandmarksProcessedData | null;
   onDisableSignal: (id: string) => void;
   onLayoutChange: (newLayout: Layout[]) => void;
 }
@@ -85,7 +84,7 @@ const MainGrid: React.FC<MainGridProps> = ({
   accelerometerData,
   gyroscopeData,
   eegRawData,
-  faceLandmarksData, // NOVO: Desestruturar a prop
+  faceLandmarksData,
   onDisableSignal,
   onLayoutChange
 }) => {
@@ -142,6 +141,7 @@ const MainGrid: React.FC<MainGridProps> = ({
     });
   }, [activeSignals, gridProps.cols]);
 
+
   const calculateGrid = useCallback(() => {
     if (gridRef.current) {
       const clientWidth = gridRef.current.clientWidth;
@@ -171,18 +171,63 @@ const MainGrid: React.FC<MainGridProps> = ({
   };
 
   // Funções auxiliares para obter dados
-  const getChartData = (item: CardType) => {
-    switch (item.signalType) {
+  const getCardDataBySignalType = useCallback((signalType: string) => {
+    switch (signalType) {
       case "hr":
         return hrData;
       case "ecg":
         return ecgData;
-      // 'eeg' genérico não tem dados específicos aqui, mas 'eegRaw' sim.
-      // Se houver um 'eeg' processado que não seja raw, adicione-o aqui.
+      case "eeg": // Para o caso de EEG processado genérico
+        // Se houver dados EEG processados que não sejam raw, retorne-os aqui
+        return []; 
+      case "eegRaw":
+        return eegRawData;
+      case "accelerometer":
+        return accelerometerData;
+      case "gyroscope":
+        return gyroscopeData;
+      case "faceLandmarks":
+        return faceLandmarksData;
+      // Adicione outros tipos de sinal conforme necessário
       default:
-        return [];
+        return null;
     }
-  };
+  }, [hrData, ecgData, eegRawData, accelerometerData, gyroscopeData, faceLandmarksData]);
+
+  // NOVO: Função para gerar o conteúdo de detalhes
+  // Agora MainGrid só gera detalhes para cards que NÃO SÃO EEG Raw, HR, ECG ou Accelerometer
+  const getDetailsContent = useCallback((item: CardType, data: any) => {
+    // Se for um card EEG Raw, HR, ECG, Accelerometer ou Gyroscope, ele gerencia seus próprios detalhes.
+    // Retornamos undefined para que o CardWrapper use seu fallback ou o que o wrapper de card passar.
+    if (item.signalType === 'eegRaw' || item.signalType === 'hr' || item.signalType === 'ecg' || item.signalType === 'accelerometer' || item.signalType === 'gyroscope') {
+      return undefined; 
+    }
+
+    switch (item.signalType) {
+      case 'eeg': // EEG processado ainda usa ChartCardContent
+      case 'steering':
+      case 'speed':
+        // Para cards baseados em gráfico, mostrar o último valor
+        const latestValue = data && data.length > 0 ? data[data.length - 1].value : 'N/A';
+        return (
+          <div className="flex flex-col items-center justify-center w-full text-sm text-gray-700">
+            <p>Último Valor: {typeof latestValue === 'number' ? `${latestValue.toFixed(2)} ${item.unit || ''}` : latestValue}</p>
+            <p>Unidade: {item.unit || 'N/A'}</p>
+          </div>
+        );
+      case 'faceLandmarks':
+        const blinkRate = data?.blink_rate !== undefined ? data.blink_rate.toFixed(2) : 'N/A';
+        const blinkCounter = data?.blink_counter !== undefined ? data.blink_counter : 'N/A';
+        return (
+          <div className="flex flex-col items-center justify-center w-full text-sm text-gray-700">
+            <p>Blink Rate: {blinkRate}</p>
+            <p>Blink Counter: {blinkCounter}</p>
+          </div>
+        );
+      default:
+        return <p className="text-xs text-gray-500">Sem detalhes disponíveis.</p>;
+    }
+  }, [ecgData, accelerometerData, gyroscopeData, faceLandmarksData]); 
 
   return (
     <div ref={gridRef} className="p-4 w-full h-full overflow-auto">
@@ -202,71 +247,128 @@ const MainGrid: React.FC<MainGridProps> = ({
           const currentLayoutItem = layout.find((l) => l.i === item.id);
           if (!currentLayoutItem) return null;
 
-          // console.log(`MainGrid: Rendering card ID: ${item.id}, Label: ${item.label}, ComponentType: ${item.componentType}`);
+          // Obter a configuração do card a partir de cardConfig.ts
+          const cardConfig = getCardConfigBySignalName(item.signalType);
+
+          if (!cardConfig || cardConfig.visualizations.length === 0) {
+            // Fallback se a configuração não for encontrada ou não tiver visualizações
+            return (
+              <div key={item.id} className="relative bg-white rounded-lg shadow-md p-4 flex items-center justify-center text-red-500">
+                Componente Desconhecido ou sem visualizações: {item.signalType}
+                <button
+                  onClick={() => onDisableSignal(item.id)}
+                  className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700 z-10 p-1 rounded-full bg-white/70"
+                  title="Desativar sinal"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          }
 
           // Calcular as dimensões reais em pixels para o card
           const cardWidth = currentLayoutItem.w * (gridProps.width / gridProps.cols) - GAP;
           const cardHeight = currentLayoutItem.h * gridProps.rowHeight - GAP;
 
-          // Renderização condicional baseada no componentType
-          let CardComponent;
-          let cardProps: any = {
-            title: item.label,
-            width: cardWidth,
-            height: cardHeight,
-          };
+          // Obter os dados específicos para este tipo de sinal
+          const cardData = getCardDataBySignalType(item.signalType);
 
-          switch (item.componentType) {
-            case 'accelerometer':
-              CardComponent = AccelerometerCard;
-              cardProps.data = accelerometerData;
-              break;
-            case 'eegRaw':
-              CardComponent = EegRawCard;
-              cardProps.data = eegRawData;
-              cardProps.unit = item.unit; // Usa a unidade da configuração do card
-              break;
-            case 'gyroscope':
-              CardComponent = GyroscopeCard;
-              cardProps.data = gyroscopeData;
-              break;
-            case 'faceLandmarks': // NOVO: Case para FaceLandmarks
-              CardComponent = FaceLandmarksCard;
-              cardProps.data = faceLandmarksData;
-              break;
-            case 'chart':
-              CardComponent = ChartCard;
-              cardProps.data = getChartData(item);
-              cardProps.color = item.color; // Usa a cor da configuração do card
-              cardProps.unit = item.unit; // Usa a unidade da configuração do card
-              break;
-            default:
-              // Fallback ou componente de erro
-              return (
-                <div key={item.id} className="relative bg-white rounded-lg shadow-md p-4 flex items-center justify-center text-red-500">
-                  Componente Desconhecido: {item.componentType}
-                  <button
-                    onClick={() => onDisableSignal(item.id)}
-                    className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700 z-10 p-1 rounded-full bg-white/70"
-                    title="Desativar sinal"
-                  >
-                    ✕
-                  </button>
-                </div>
-              );
+          // Renderização condicional para HeartRateCard, EcgCard, EegRawCard, AccCard e GyroCard
+          if (item.signalType === 'hr') {
+            return (
+              <div key={item.id} className="relative">
+                <HeartRateCard 
+                  title={item.label}
+                  width={cardWidth}
+                  height={cardHeight}
+                  data={cardData as Point[]} 
+                  color={item.color || cardConfig.color || '#000000'} 
+                  unit={item.unit || cardConfig.unit}
+                  onClose={() => onDisableSignal(item.id)}
+                />
+              </div>
+            );
+          } else if (item.signalType === 'ecg') { 
+            return (
+              <div key={item.id} className="relative">
+                <EcgCard 
+                  title={item.label}
+                  width={cardWidth}
+                  height={cardHeight}
+                  data={cardData as Point[]} 
+                  color={item.color || cardConfig.color || '#000000'} 
+                  unit={item.unit || cardConfig.unit}
+                  onClose={() => onDisableSignal(item.id)}
+                />
+              </div>
+            );
+          } else if (item.signalType === 'eegRaw') {
+            return (
+              <div key={item.id} className="relative">
+                <EegRawCard 
+                  title={item.label}
+                  width={cardWidth}
+                  height={cardHeight}
+                  data={cardData as EegRawProcessedData} 
+                  unit={item.unit || cardConfig.unit}
+                  onClose={() => onDisableSignal(item.id)}
+                />
+              </div>
+            );
+          } else if (item.signalType === 'accelerometer') {
+            return (
+              <div key={item.id} className="relative">
+                <AccCard 
+                  title={item.label}
+                  width={cardWidth}
+                  height={cardHeight}
+                  data={cardData as AccelerometerProcessedData} 
+                  color={item.color || cardConfig.color || '#000000'} 
+                  unit={item.unit || cardConfig.unit}
+                  onClose={() => onDisableSignal(item.id)}
+                />
+              </div>
+            );
+          } else if (item.signalType === 'gyroscope') { // NOVO: Renderizar GyroCard diretamente
+            return (
+              <div key={item.id} className="relative">
+                <GyroCard 
+                  title={item.label}
+                  width={cardWidth}
+                  height={cardHeight}
+                  data={cardData as GyroscopeProcessedData} 
+                  onClose={() => onDisableSignal(item.id)}
+                />
+              </div>
+            );
           }
+
+
+          // Para todos os outros tipos de card (EEG processado, Steering, Speed, FaceLandmarks)
+          // que ainda usarão o CardWrapper diretamente com ChartCardContent ou outros conteúdos
+          const detailsContent = getDetailsContent(item, cardData); 
+          let customHeaderContent: React.ReactNode = undefined; 
+
+          const visualizationProps: { [key: string]: any } = {
+            unit: item.unit || cardConfig.unit,
+            color: item.color || cardConfig.color,
+          };
 
           return (
             <div key={item.id} className="relative">
-              {/* Renderiza o componente de card dinamicamente */}
-              <CardComponent {...cardProps} />
-              <button
-                onClick={() => onDisableSignal(item.id)}
-                className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700 z-10 p-1 rounded-full bg-white/70"
-                title="Desativar sinal"
-              >
-                ✕
-              </button>
+              <CardWrapper
+                title={item.label}
+                width={cardWidth}
+                height={cardHeight}
+                isLoading={cardData === null || (Array.isArray(cardData) && cardData.length === 0) || (typeof cardData === 'object' && Object.keys(cardData).length === 0)}
+                noDataMessage="A aguardar dados..."
+                onClose={() => onDisableSignal(item.id)}
+                headerContent={customHeaderContent} 
+                detailsContent={detailsContent} 
+                visualizations={cardConfig.visualizations}
+                cardData={cardData}
+                visualizationProps={visualizationProps}
+              />
             </div>
           );
         })}
